@@ -1,8 +1,8 @@
 [package]
 name = "rc-correctness"
 version = "0.1"
-lean_version = "3.4.2"
+lean_version = "leanprover-community/lean:3.51.1"
 path = "src"
 
 [dependencies]
-mathlib = {git = "https://github.com/leanprover-community/mathlib", rev = "8bdb14743360c2db61d07edb20addb2fe9a58d63"}
+mathlib = {git = "https://github.com/leanprover-community/mathlib", rev = "65a1391a0106c9204fe45bc73a039f056558cb83"}
