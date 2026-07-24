@@ -3,7 +3,7 @@ import Mathlib.Data.List.Basic
 import Mathlib.Data.Multiset.Basic
 import Mathlib.Data.Finset.Basic
 import Mathlib.Data.Finset.Sort
-import Mathlib.Data.List.Perm
+import Mathlib.Data.List.Permutation
 
 namespace List
 
