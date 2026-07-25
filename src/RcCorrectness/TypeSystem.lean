@@ -1,86 +1,111 @@
-import ast
+import RcCorrectness.Ast
+import Mathlib.Data.Multiset.Basic
+import Mathlib.Data.Multiset.AddSub
 
-namespace rc_correctness
+namespace RcCorrectness
 
-@[derive decidable_eq]
-inductive lin_type : Type
+inductive LinType : Type
   | 𝕆 | 𝔹
+deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
-structure typed_rc := (c : rc) (ty : lin_type)
+structure TypedRC where
+  c : Rc
+  ty : LinType
+deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
-@[derive decidable_eq]
-structure typed_var := (x : var) (ty : lin_type)
+structure TypedVar where
+  x : Var
+  ty : LinType
+deriving Repr, BEq, DecidableEq, ReflBEq, LawfulBEq
 
-notation x ` ∶ `:2 τ := typed_var.mk x τ
-notation xs ` [∶] `:2 τ := (list.map (λ x, (x ∶ τ)) xs : multiset typed_var)
-notation xs ` {∶} `:2 τ := multiset.map (λ x, (x ∶ τ)) xs
-notation c ` ∷ `:2 τ := typed_rc.mk c τ
+notation:60 x " ∶ " τ => TypedVar.mk x τ
+notation:60 xs " [∶] " τ => ((List.map (fun x => (x ∶ τ)) xs : List TypedVar) : Multiset TypedVar)
+notation:60 c " ∷ " τ => TypedRC.mk c τ
 
-abbreviation type_context := multiset typed_var
+abbrev TypeContext := Multiset TypedVar
 
-open rc_correctness.expr
-open rc_correctness.fn_body
-open rc_correctness.lin_type
+section
 
-inductive linear (β : const → var → lin_type) : type_context → typed_rc → Prop
-notation Γ ` ⊩ `:1 t := linear Γ t
-| weaken {Γ : type_context} {t : typed_rc} (x : var)
+set_option quotPrecheck false in
+set_option hygiene false in
+local notation:50 Γ " ⊩ " t => Linear β Γ t
+
+open FnBody Expr LinType in
+inductive Linear (β : Const → Var → LinType) : TypeContext → TypedRC → Prop
+| weaken {Γ : TypeContext} {t : TypedRC} (x : Var)
   (t_typed : Γ ⊩ t) :
-  (x ∶ 𝔹) :: Γ ⊩ t
-| contract {Γ : type_context} {x : var} {t : typed_rc}
-  (x_𝔹 : (x ∶ 𝔹) ∈ Γ) (t_typed : (x ∶ 𝔹) :: Γ ⊩ t) :
+  (x ∶ 𝔹) ::ₘ Γ ⊩ t
+| contract {Γ : TypeContext} {x : Var} {t : TypedRC}
+  (x_𝔹 : (x ∶ 𝔹) ∈ Γ) (t_typed : (x ∶ 𝔹) ::ₘ Γ ⊩ t) :
   Γ ⊩ t
-| inc_𝕆 {Γ : type_context} {x : var} {F : fn_body}
-  (x_𝕆 : (x ∶ 𝕆) ∈ Γ) (F_𝕆 : (x ∶ 𝕆) :: Γ ⊩ F ∷ 𝕆) :
-  Γ ⊩ (inc x; F) ∷ 𝕆
-| inc_𝔹 {Γ : type_context} {x : var} {F : fn_body}
-  (x_𝔹 : (x ∶ 𝔹) ∈ Γ) (F_𝕆 : (x ∶ 𝕆) :: Γ ⊩ F ∷ 𝕆) :
-  Γ ⊩ (inc x; F) ∷ 𝕆
-| «dec» {Γ : type_context} (x : var) {F : fn_body}
+| inc_𝕆 {Γ : TypeContext} {x : Var} {F : FnBody}
+  (x_𝕆 : (x ∶ 𝕆) ∈ Γ) (F_𝕆 : (x ∶ 𝕆) ::ₘ Γ ⊩ F ∷ 𝕆) :
+  Γ ⊩ (incᶠᵇ x;ᶠᵇ F) ∷ 𝕆
+| inc_𝔹 {Γ : TypeContext} {x : Var} {F : FnBody}
+  (x_𝔹 : (x ∶ 𝔹) ∈ Γ) (F_𝕆 : (x ∶ 𝕆) ::ₘ Γ ⊩ F ∷ 𝕆) :
+  Γ ⊩ (incᶠᵇ x;ᶠᵇ F) ∷ 𝕆
+| «dec» {Γ : TypeContext} (x : Var) {F : FnBody}
   (F_𝕆 : Γ ⊩ F ∷ 𝕆) :
-  (x ∶ 𝕆) :: Γ ⊩ (dec x; F) ∷ 𝕆
-| ret {x : var} :
-  (x ∶ 𝕆) :: 0 ⊩ (ret x) ∷ 𝕆
-| case_𝕆 {Γ : type_context} {x : var} {Fs : list fn_body}
+  (x ∶ 𝕆) ::ₘ Γ ⊩ (decᶠᵇ x;ᶠᵇ F) ∷ 𝕆
+| ret {x : Var} :
+  (x ∶ 𝕆) ::ₘ 0 ⊩ (ret x) ∷ 𝕆
+| case_𝕆 {Γ : TypeContext} {x : Var} {Fs : List FnBody}
   (x_𝕆 : (x ∶ 𝕆) ∈ Γ) (Fs_𝕆 : ∀ F ∈ Fs, Γ ⊩ ↑F ∷ 𝕆) :
-  Γ ⊩ (case x of Fs) ∷ 𝕆
-| case_𝔹 {Γ : type_context} {x : var} {Fs : list fn_body}
+  Γ ⊩ (caseᶠᵇ x ofᶠᵇ Fs) ∷ 𝕆
+| case_𝔹 {Γ : TypeContext} {x : Var} {Fs : List FnBody}
   (x_𝔹 : (x ∶ 𝔹) ∈ Γ) (Fs_𝕆 : ∀ F ∈ Fs, Γ ⊩ ↑F ∷ 𝕆) :
-  Γ ⊩ (case x of Fs) ∷ 𝕆
-| const_app_full (ys : list var) (c : const) :
-  list.map (λ y, y ∶ β c y) ys ⊩ c⟦ys…⟧ ∷ 𝕆
-| const_app_part (ys : list var) (c : const) :
-  ys [∶] 𝕆 ⊩ c⟦ys…, _⟧ ∷ 𝕆
-| var_app (x y : var) :
-  (x ∶ 𝕆) :: (y ∶ 𝕆) :: 0 ⊩ x⟦y⟧ ∷ 𝕆
-| ctor_app (ys : list var) (i : cnstr) :
-  ys [∶] 𝕆 ⊩ (⟪ys⟫i) ∷ 𝕆
-| «let» {Γ : type_context} {xs : list var} {e : expr} {Δ : type_context} {z : var} {F : fn_body}
-  (xs_𝕆 : (xs [∶] 𝕆) ⊆ Δ) (e_𝕆 : Γ + (xs [∶] 𝔹) ⊩ e ∷ 𝕆) (F_𝕆 : (z ∶ 𝕆) :: Δ ⊩ F ∷ 𝕆) :
-  Γ + Δ ⊩ (z ≔ e; F) ∷ 𝕆
-| proj_𝔹 {Γ : type_context} {x y : var} {F : fn_body} (i : cnstr)
-  (x_𝔹 : (x ∶ 𝔹) ∈ Γ) (F_𝕆 : (y ∶ 𝔹) :: Γ ⊩ F ∷ 𝕆) :
-  Γ ⊩ (y ≔ x[i]; F) ∷ 𝕆
-| proj_𝕆 {Γ : type_context} {x y : var} {F : fn_body} (i : cnstr)
-  (x_𝕆 : (x ∶ 𝕆) ∈ Γ) (F_𝕆 : (y ∶ 𝕆) :: Γ ⊩ F ∷ 𝕆) :
-  Γ ⊩ (y ≔ x[i]; inc y; F) ∷ 𝕆
+  Γ ⊩ (caseᶠᵇ x ofᶠᵇ Fs) ∷ 𝕆
+| const_app_full (ys : List Var) (c : Const) :
+  ((ys.map (fun y => y ∶ β c y) : List TypedVar) : Multiset TypedVar) ⊩ c⟦ys…⟧ ∷ 𝕆
+| const_app_part (ys : List Var) (c : Const) :
+  (ys [∶] 𝕆) ⊩ c⟦ys…, _⟧ ∷ 𝕆
+| var_app (x y : Var) :
+  (x ∶ 𝕆) ::ₘ (y ∶ 𝕆) ::ₘ 0 ⊩ x⟦y⟧ ∷ 𝕆
+| ctor_app (ys : List Var) (i : Cnstr) :
+  (ys [∶] 𝕆) ⊩ (⟪ys⟫i) ∷ 𝕆
+| «let» {Γ : TypeContext} {xs : List Var} {e : Expr} {Δ : TypeContext} {z : Var} {F : FnBody}
+  (xs_𝕆 : (xs [∶] 𝕆) ⊆ Δ) (e_𝕆 : Γ + (xs [∶] 𝔹) ⊩ e ∷ 𝕆) (F_𝕆 : (z ∶ 𝕆) ::ₘ Δ ⊩ F ∷ 𝕆) :
+  Γ + Δ ⊩ (z ≔ᶠᵇ e;ᶠᵇ F) ∷ 𝕆
+| proj_𝔹 {Γ : TypeContext} {x y : Var} {F : FnBody} (i : Cnstr)
+  (x_𝔹 : (x ∶ 𝔹) ∈ Γ) (F_𝕆 : (y ∶ 𝔹) ::ₘ Γ ⊩ F ∷ 𝕆) :
+  Γ ⊩ (y ≔ᶠᵇ x[ᵉi];ᶠᵇ F) ∷ 𝕆
+| proj_𝕆 {Γ : TypeContext} {x y : Var} {F : FnBody} (i : Cnstr)
+  (x_𝕆 : (x ∶ 𝕆) ∈ Γ) (F_𝕆 : (y ∶ 𝕆) ::ₘ Γ ⊩ F ∷ 𝕆) :
+  Γ ⊩ (y ≔ᶠᵇ x[ᵉi];ᶠᵇ incᶠᵇ y;ᶠᵇ F) ∷ 𝕆
+end section
 
-notation β `; ` Γ ` ⊩ `:1 t := linear β Γ t
+-- Expression typing
+notation β " ; " Γ " ⊩ " t => Linear β Γ t
 
-inductive linear_const (β : const → var → lin_type) (δ : program) : const → Prop
-notation ` ⊩ `:1 c := linear_const c
-| const {c : const}
-  (F_𝕆 : β; (δ c).ys.map (λ y, y ∶ β c y) ⊩ (δ c).F ∷ 𝕆) :
+section
+set_option quotPrecheck false in
+set_option hygiene false in
+local notation " ⊩ " c => LinearConst β δ c
+
+open FnBody Expr LinType in
+inductive LinearConst (β : Const → Var → LinType) (δ : Program) : Const → Prop
+| const {c : Const}
+  (F_𝕆 : β; ((δ c).ys.map (fun y => y ∶ β c y) : Multiset TypedVar) ⊩ (δ c).fn_body ∷ 𝕆) :
   ⊩ c
+end section
 
-notation β `; ` δ ` ⊩ `:1 c := linear_const β δ c
+-- Constant typing
+notation β " ;ᶜ " δ " ⊩ᶜ " c => LinearConst β δ c
 
-inductive linear_program (β : const → var → lin_type) : program → Prop
-notation ` ⊩ `:1 δ := linear_program δ
-| program {δ : program}
-  (const_typed : ∀ c : const, (β; δ ⊩ c)) :
-  ⊩ δ
+section
 
-notation β ` ⊩ `:1 δ := linear_program β δ
+set_option quotPrecheck false in
+set_option hygiene false in
+local notation " ⊩ᵖ " δ => LinearProgram β δ
 
-end rc_correctness
+open FnBody Expr LinType in
+inductive LinearProgram (β : Const → Var → LinType) : Program → Prop
+| program {δ : Program}
+  (const_typed : ∀ c : Const, β ;ᶜ δ ⊩ᶜ c) :
+  ⊩ᵖ δ
+end section
+
+-- Program typing
+notation:50 β " ⊩ᵖ " δ => LinearProgram β δ
+
+end
