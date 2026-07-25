@@ -9,13 +9,13 @@ open rc_correctness.lin_type
 
 lemma not_𝔹_iff_𝕆 {τ : lin_type} : τ ≠ 𝔹 ↔ τ = 𝕆 :=
 begin
-  cases τ; 
+  cases τ;
   split; intro h; contradiction <|> refl
 end
 
 lemma not_𝕆_iff_𝔹 {τ : lin_type} : τ ≠ 𝕆 ↔ τ = 𝔹 :=
 begin
-  cases τ; 
+  cases τ;
   split; intro h; contradiction <|> refl
 end
 
@@ -23,31 +23,31 @@ section FV_wf
   open finset
   open list
 
-  theorem FV_sub_wf_context {δ : program} {β : const → var → lin_type} {Γ : finset var} {F : fn_body} 
-    (h : β; δ; Γ ⊢ F) : 
+  theorem FV_sub_wf_context {δ : program} {β : const → var → lin_type} {Γ : finset var} {F : fn_body}
+    (h : β; δ; Γ ⊢ F) :
     FV F ⊆ Γ :=
   begin
     with_cases { induction F using rc_correctness.fn_body.rec_wf generalizing Γ };
     simp only [subset_iff],
     case ret : x {
-      intros y h₁, 
+      intros y h₁,
       simp only [FV, finset.mem_singleton, insert_empty_eq_singleton] at h₁,
       cases h,
       rwa h₁
     },
     case «let» : x e F ih {
-      intros y h₁, 
+      intros y h₁,
       simp only [FV, mem_erase, finset.mem_union] at h₁,
       cases h₁,
       { cases h;
-        simp only [FV_expr, mem_to_finset, mem_insert, 
+        simp only [FV_expr, mem_to_finset, mem_insert,
                   finset.mem_singleton, has_insert_eq_insert, insert_empty_eq_singleton] at h₁;
         try { simp only [subset_iff, mem_to_finset] at h_ys_def };
         try { exact h_ys_def h₁ };
         try { rwa h₁ },
         cases h₁; rwa h₁ },
       { cases h₁,
-        cases h; 
+        cases h;
         { replace ih := subset_iff.mp (ih h_F_wf) h₁_right,
           rw mem_insert at ih,
           cases ih,
@@ -55,10 +55,10 @@ section FV_wf
           { assumption } } }
     },
     case «case» : x Fs ih {
-      intros y h₁, 
+      intros y h₁,
       simp only [FV, mem_insert, finset.mem_join] at h₁,
       cases h,
-      cases h₁, 
+      cases h₁,
       { rwa h₁ },
       rw map_wf_eq_map at h₁,
       simp only [exists_prop, list.mem_map] at h₁,
@@ -78,7 +78,7 @@ end FV_wf
 section FV_C
   open finset
 
-  lemma FV_inc_𝕆_var_eq_FV {x : var} {F : fn_body} (V : finset var) (βₗ : var → lin_type) 
+  lemma FV_inc_𝕆_var_eq_FV {x : var} {F : fn_body} (V : finset var) (βₗ : var → lin_type)
     (h : x ∈ FV F) :
     FV (inc_𝕆_var x V F βₗ) = FV F :=
   begin
@@ -89,7 +89,7 @@ section FV_C
     exact insert_eq_of_mem h
   end
 
-  lemma FV_sub_FV_dec_𝕆 (ys : list var) (F : fn_body) (βₗ : var → lin_type) 
+  lemma FV_sub_FV_dec_𝕆 (ys : list var) (F : fn_body) (βₗ : var → lin_type)
     : FV F ⊆ FV (dec_𝕆 ys F βₗ) :=
   begin
     apply subset_iff.mpr,
@@ -104,20 +104,20 @@ section FV_C
     { exact ys_ih }
   end
 
-  lemma FV_dec_𝕆_filter (ys : list var) (F : fn_body) (βₗ : var → lin_type) 
+  lemma FV_dec_𝕆_filter (ys : list var) (F : fn_body) (βₗ : var → lin_type)
     : FV (dec_𝕆 ys F βₗ) = ys.to_finset.filter (λ y, βₗ y = 𝕆 ∧ y ∉ FV F) ∪ FV F :=
   begin
     induction ys,
     { simp only [dec_𝕆, filter_empty, finset.empty_union, list.to_finset_nil, list.foldr_nil] },
     simp only [dec_𝕆, dec_𝕆_var, filter_insert, list.foldr_cons, list.to_finset_cons] at *,
     split_ifs;
-    try { simp only [FV, insert_union] }, 
+    try { simp only [FV, insert_union] },
     { rw ys_ih },
     { simp only [not_and, not_not] at h_1,
       have ys_hd_in_FV, from h_1 h.left,
-      have : 
-        FV (list.foldr (λ (x : var) (acc : fn_body), 
-          ite (βₗ x = 𝕆 ∧ x ∉ FV acc) (dec x; acc) acc) 
+      have :
+        FV (list.foldr (λ (x : var) (acc : fn_body),
+          ite (βₗ x = 𝕆 ∧ x ∉ FV acc) (dec x; acc) acc)
           F ys_tl) = FV (dec_𝕆 ys_tl F βₗ), from rfl,
       rw this at h,
       exact absurd (subset_iff.mp (FV_sub_FV_dec_𝕆 ys_tl F βₗ) ys_hd_in_FV) h.right },
@@ -128,22 +128,22 @@ section FV_C
     { rw ys_ih }
   end
 
-  lemma FV_dec_𝕆_sub_vars_FV (vars : list var) (F : fn_body) (βₗ : var → lin_type) 
+  lemma FV_dec_𝕆_sub_vars_FV (vars : list var) (F : fn_body) (βₗ : var → lin_type)
   : FV (dec_𝕆 vars F βₗ) ⊆ vars.to_finset ∪ FV F :=
   begin
-    simp only [FV_dec_𝕆_filter, subset_iff, mem_union, mem_filter, list.mem_to_finset], 
+    simp only [FV_dec_𝕆_filter, subset_iff, mem_union, mem_filter, list.mem_to_finset],
     intros x h,
     cases h,
     { exact or.inl h.left },
     { exact or.inr h }
   end
-                           
 
-  lemma FV_dec_eq_FV {e : expr} {x z : var} {F : fn_body} 
-    (h : x ∈ FV_expr e ∪ erase (FV F) z) : 
+
+  lemma FV_dec_eq_FV {e : expr} {x z : var} {F : fn_body}
+    (h : x ∈ FV_expr e ∪ erase (FV F) z) :
     FV_expr e ∪ erase (FV (dec x; F)) z = FV_expr e ∪ erase (FV F) z :=
   begin
-    unfold FV, 
+    unfold FV,
     have hem : x = z ∨ x ≠ z, from dec_em (x = z),
     cases hem,
     { rw hem,
@@ -154,7 +154,7 @@ section FV_C
   end
 
   lemma FV_Capp_eq_FV {xs : list (var × lin_type)} {z : var} {e : expr} {F1 F2 : fn_body} (βₗ : var → lin_type)
-    (heq : FV F1 = FV F2) (h : ∀ xτ ∈ xs, (xτ : var × lin_type).1 ∈ FV (z ≔ e; F1)) : 
+    (heq : FV F1 = FV F2) (h : ∀ xτ ∈ xs, (xτ : var × lin_type).1 ∈ FV (z ≔ e; F1)) :
     FV (C_app xs (z ≔ e; F1) βₗ) = FV (z ≔ e; F2) :=
   begin
     induction xs generalizing F1 F2,
@@ -163,22 +163,22 @@ section FV_C
     cases xs_hd with x τ,
     simp only [list.mem_cons_iff, list.forall_mem_cons'] at h,
     cases h with x_in_FV h,
-    simp only [C_app, FV] at *, 
+    simp only [C_app, FV] at *,
     cases τ,
     { rw if_pos rfl,
-      unfold inc_𝕆_var, 
+      unfold inc_𝕆_var,
       split_ifs,
       { exact xs_ih heq h },
       unfold FV,
       rw xs_ih heq h,
       rw heq at x_in_FV,
-      exact insert_eq_of_mem x_in_FV }, 
-    { simp only [dec_𝕆_var, if_false], 
+      exact insert_eq_of_mem x_in_FV },
+    { simp only [dec_𝕆_var, if_false],
       split_ifs,
       { suffices h2 : ∀ (xτ : var × lin_type), xτ ∈ xs_tl → xτ.fst ∈ FV_expr e ∪ erase (FV (dec x; F1)) z,
         { have h3 : FV (dec x; F1) = FV (dec x; F2), from by
           { unfold FV, rw heq },
-          rw xs_ih h3 h2, 
+          rw xs_ih h3 h2,
           rw heq at x_in_FV,
           exact FV_dec_eq_FV x_in_FV },
         { intros yτ yτ_in_tl,
@@ -191,30 +191,30 @@ section FV_C
   begin
     with_cases { induction F using rc_correctness.fn_body.rec_wf generalizing βₗ },
     case ret : x {
-      unfold FV C inc_𝕆_var, 
+      unfold FV C inc_𝕆_var,
       split_ifs;
       simp only [FV, insert_eq_of_mem, insert_empty_eq_singleton, mem_singleton]
     },
     case «case» : x Fs ih {
-      unfold C FV, 
+      unfold C FV,
       repeat { rw list.map_wf_eq_map },
       simp only [list.map_map],
       ext,
       apply iff.intro,
-      { intro h, 
-        apply mem_insert.mpr, 
+      { intro h,
+        apply mem_insert.mpr,
         replace h := mem_insert.mp h,
         cases h,
         { exact or.inl h },
-        { rw mem_join at h, 
-          rcases h with ⟨S, h, a_in_S⟩, 
+        { rw mem_join at h,
+          rcases h with ⟨S, h, a_in_S⟩,
           simp only [list.mem_map, function.comp_app] at h,
-          rcases h with ⟨b, b_in_Fs, h⟩, 
+          rcases h with ⟨b, b_in_Fs, h⟩,
           rw ←h at a_in_S,
           have h2, from FV_dec_𝕆_sub_vars_FV (sort var_le (insert x (join (list.map FV Fs)))) (C β b βₗ) βₗ,
           rw sort_to_finset _ at h2,
           have h3, from mem_of_subset h2 a_in_S,
-          simp only [mem_union, mem_insert] at h3, 
+          simp only [mem_union, mem_insert] at h3,
           rcases h3 with ⟨l, m, r⟩,
           { exact or.inl h3 },
           { exact or.inr h3 },
@@ -222,12 +222,12 @@ section FV_C
           simp only [exists_prop, list.mem_map, mem_join],
           exact or.inr ⟨FV b, ⟨⟨b, ⟨b_in_Fs, rfl⟩⟩, h3⟩⟩ } },
       { intro h,
-        apply mem_insert.mpr, 
+        apply mem_insert.mpr,
         replace h := mem_insert.mp h,
         cases h,
         { exact or.inl h },
-        { rw mem_join at h, 
-          rcases h with ⟨S, h, a_in_S⟩, 
+        { rw mem_join at h,
+          rcases h with ⟨S, h, a_in_S⟩,
           rw list.mem_map at h,
           rcases h with ⟨b, ⟨b_in_Fs, FV_b_eq_S⟩⟩,
           apply or.inr,
@@ -251,8 +251,8 @@ section FV_C
         rw list.mem_map at h,
         apply Exists.rec_on h,
         intros x h_h,
-        apply and.rec_on h_h, 
-        intros x_in_ys xτ_def, 
+        apply and.rec_on h_h,
+        intros x_in_ys xτ_def,
         cases xτ,
         rw ←xτ_def,
         simp only [FV, FV_expr, mem_union, mem_insert, insert_union, list.mem_to_finset, mem_erase]
@@ -260,15 +260,15 @@ section FV_C
       { exact or.inl x_in_ys },
       { exact or.inl x_in_ys },
       { simp only [list.mem_cons_iff, list.mem_singleton] at h,
-        simp only [FV, FV_expr, mem_union, mem_insert, insert_union, 
-                  has_insert_eq_insert, insert_empty_eq_singleton, mem_singleton], 
+        simp only [FV, FV_expr, mem_union, mem_insert, insert_union,
+                  has_insert_eq_insert, insert_empty_eq_singleton, mem_singleton],
         cases h;
         rw h,
         { exact or.inr (or.inl rfl) },
         { exact or.inl (rfl) } },
-      { exact or.inl x_in_ys }, 
-      { simp only [FV, C, dec_𝕆_var, FV_expr, insert_empty_eq_singleton], 
-        split_ifs; 
+      { exact or.inl x_in_ys },
+      { simp only [FV, C, dec_𝕆_var, FV_expr, insert_empty_eq_singleton],
+        split_ifs;
         simp only [FV, erase_insert_eq_erase, FV_expr, insert_empty_eq_singleton],
         { rw ih (βₗ[x↦𝕆]) at *,
           have hem : e_x = x ∨ e_x ≠ x, from dec_em (e_x = x),
@@ -287,7 +287,7 @@ end FV_C
 section sandwich
   open finset
 
-  lemma wf_sandwich {β : const → var → lin_type} {δ : program} {Γ Γ' Γ'' : finset var} {F : fn_body} 
+  lemma wf_sandwich {β : const → var → lin_type} {δ : program} {Γ Γ' Γ'' : finset var} {F : fn_body}
     (Γ_sub_Γ' : Γ ⊆ Γ') (Γ'_sub_Γ'' : Γ' ⊆ Γ'') (hΓ : β; δ; Γ ⊢ F) (hΓ'' : β; δ; Γ'' ⊢ F)
     : β; δ; Γ' ⊢ F :=
   begin
@@ -303,8 +303,8 @@ section sandwich
       cases hΓ'';
       let h1 := insert_subset_insert x Γ_sub_Γ';
       let h2 := insert_subset_insert x Γ'_sub_Γ'',
-      any_goals { 
-        apply fn_body_wf.let_const_app_full 
+      any_goals {
+        apply fn_body_wf.let_const_app_full
         <|> apply fn_body_wf.let_const_app_part
         <|> apply fn_body_wf.let_var_app
         <|> apply fn_body_wf.let_ctor
@@ -354,51 +354,51 @@ section sandwich
       <|> apply fn_body_wf.let_proj
     },
     any_goals { simp [FV, FV_expr, subset_union_left, not_or_distrib] },
-    any_goals { 
+    any_goals {
       intro h,
       simp only [subset_iff, list.mem_to_finset] at h_ys_def,
       have : h_z ∈ h_Γ, from h_ys_def h,
-      contradiction 
+      contradiction
     },
     any_goals { split },
-    any_goals { 
+    any_goals {
       intro h,
       rw h at h_z_undef,
-      contradiction 
+      contradiction
     },
     any_goals { apply wf_sandwich _ _ h_ih h_F_wf },
-    any_goals { 
+    any_goals {
       simp only [subset_iff, mem_union, mem_insert, mem_erase],
       intros x x_in_FV,
       by_cases eq : x = h_z,
       { exact or.inl eq },
       { repeat { apply or.inr },
-        exact ⟨eq, x_in_FV⟩ } 
+        exact ⟨eq, x_in_FV⟩ }
     },
-    any_goals { 
+    any_goals {
       apply insert_subset_insert,
       simp only [subset_iff, mem_union, list.mem_to_finset, mem_erase, mem_insert, mem_singleton],
       intros x h,
       repeat { cases h }
     },
-    any_goals { 
+    any_goals {
       simp only [subset_iff, list.mem_to_finset] at h_ys_def,
-      exact h_ys_def h 
+      exact h_ys_def h
     },
-    any_goals { 
-      cases mem_insert.mp (subset_iff.mp (FV_sub_wf_context h_F_wf) h_right), 
+    any_goals {
+      cases mem_insert.mp (subset_iff.mp (FV_sub_wf_context h_F_wf) h_right),
       { contradiction },
-      { assumption } 
-    }, 
+      { assumption }
+    },
     any_goals { assumption },
     { apply fn_body_wf.case,
       { exact mem_insert_self h_x _ },
       intros F F_in_Fs,
       apply wf_sandwich _ _ (h_ih F F_in_Fs) (h_Fs_wf F F_in_Fs);
-      simp only [subset_iff, list.map_wf_eq_map, exists_prop, mem_join, mem_insert, list.mem_map], 
-      { intros x x_in_FV, 
+      simp only [subset_iff, list.map_wf_eq_map, exists_prop, mem_join, mem_insert, list.mem_map],
+      { intros x x_in_FV,
         apply or.inr,
-        use FV F, 
+        use FV F,
         use F,
         { exact ⟨F_in_Fs, rfl⟩ },
         { assumption } },
@@ -410,12 +410,12 @@ section sandwich
         exact subset_iff.mp (FV_sub_wf_context (h_Fs_wf a a_in_Fs)) x_in_S } }
   end
 
-  lemma wf_FV_sandwich {β : const → var → lin_type} {δ : program} {Γ Γ' : finset var} {F : fn_body} 
+  lemma wf_FV_sandwich {β : const → var → lin_type} {δ : program} {Γ Γ' : finset var} {F : fn_body}
     (Γ'_low : FV F ⊆ Γ') (Γ'_high : Γ' ⊆ Γ) (h : β; δ; Γ ⊢ F)
     : β; δ; Γ' ⊢ F := wf_sandwich Γ'_low Γ'_high (FV_wf h) h
 end sandwich
 
-lemma vars_sub_FV_dec_𝕆 (ys : list var) (F : fn_body) (βₗ : var → lin_type) 
+lemma vars_sub_FV_dec_𝕆 (ys : list var) (F : fn_body) (βₗ : var → lin_type)
   : ∀ y ∈ ys, βₗ y = 𝕆 → y ∈ FV (dec_𝕆 ys F βₗ) :=
 begin
   intros y y_in_ys y𝕆,
@@ -456,23 +456,23 @@ lemma inductive_dec' {β : const → var → lin_type} {ys : list var} {y𝕆 y�
   (h : β; (filter (λ y, y ∉ ys ∨ y ∈ FV F) y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ F ∷ 𝕆)
   : β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ dec_𝕆 ys F βₗ ∷ 𝕆 :=
 begin
-  have h_congr : ∀ {ys_hd : var} {ys_tl : list var} {ys' : multiset var} 
-    (f : ∀ y ∈ ys', y ∉ ys_tl → ¬y = ys_hd ∧ y ∉ ys_tl ∨ y ∈ FV F), 
+  have h_congr : ∀ {ys_hd : var} {ys_tl : list var} {ys' : multiset var}
+    (f : ∀ y ∈ ys', y ∉ ys_tl → ¬y = ys_hd ∧ y ∉ ys_tl ∨ y ∈ FV F),
     ∀ y ∈ ys', y ∉ (ys_hd :: ys_tl : list var) ∨ y ∈ FV F ↔ y ∉ ys_tl ∨ y ∈ FV F,
   { intros ys_hd ys_tl ys' f y y_in_ys',
     rw [list.mem_cons_iff, not_or_distrib],
-    exact ⟨λ h', h'.elim (λ h'', or.inl h''.right) (λ h'', or.inr h''), 
+    exact ⟨λ h', h'.elim (λ h'', or.inl h''.right) (λ h'', or.inr h''),
            λ h', h'.elim (λ h'', f y y_in_ys' h'') (λ h'', or.inr h'')⟩ },
   rw dec_𝕆_eq_dec_𝕆'_of_nodup F βₗ d,
   induction ys generalizing y𝕆 y𝔹,
-  { rw [dec_𝕆', list.foldr_nil], 
-    simp only [list.not_mem_nil, true_or, not_false_iff, filter_true] at h, 
+  { rw [dec_𝕆', list.foldr_nil],
+    simp only [list.not_mem_nil, true_or, not_false_iff, filter_true] at h,
     assumption },
-  cases list.nodup_cons.mp d with ys_hd_not_in_ys_tl nodup_ys_tl, 
+  cases list.nodup_cons.mp d with ys_hd_not_in_ys_tl nodup_ys_tl,
   rw ←cons_coe at ys_sub_vars,
   simp only [cons_subset, mem_add] at ys_sub_vars,
   cases ys_sub_vars with ys_hd_def ys_tl_sub_vars,
-  rw [dec_𝕆', list.foldr_cons], 
+  rw [dec_𝕆', list.foldr_cons],
   split_ifs,
   { cases ys_hd_def, swap,
     { rw y𝔹_𝔹 ys_hd ys_hd_def at h_1,
@@ -495,7 +495,7 @@ begin
     { simp only [y𝕆_def, mem_cons] at y𝕆_𝕆,
       intros y y_in_y𝕆',
       exact y𝕆_𝕆 y (or.inr y_in_y𝕆') },
-    { assumption }, 
+    { assumption },
     { simp only [y𝕆_def, nodup_cons] at nd_y𝕆,
       exact nd_y𝕆.right },
     { assumption },
@@ -546,20 +546,20 @@ begin
   { intros y y_in_y𝕆,
     split; intro h',
     { exact or.inr h' },
-    { cases h', 
+    { cases h',
       { exact absurd (y𝕆_sub_ys y_in_y𝕆) h' },
       { assumption } } },
   rw filter_congr this at h,
   exact inductive_dec' ys_sub_vars d y𝕆_𝕆 y𝔹_𝔹 nd_y𝕆 nd_y𝔹 h
 end
 
-lemma inductive_weakening {β : const → var → lin_type} {ys : multiset typed_var} {y𝔹 : multiset var} 
-  {r : rc} {τ : lin_type} 
+lemma inductive_weakening {β : const → var → lin_type} {ys : multiset typed_var} {y𝔹 : multiset var}
+  {r : rc} {τ : lin_type}
   (h : β; ys ⊩ r ∷ τ)
   : β; ys + (y𝔹 {∶} 𝔹) ⊩ r ∷ τ :=
 begin
   apply multiset.induction_on y𝔹,
-  { simp only [map_zero, add_zero], 
+  { simp only [map_zero, add_zero],
     assumption },
   intros a s ih,
   simp only [map_cons, add_cons],
@@ -597,7 +597,7 @@ theorem rc_insertion_correctness' {β : const → var → lin_type} {δ : progra
   (y𝕆_sub_FV : y𝕆.to_finset ⊆ FV (δ c).F) (wf : β; δ; y𝕆.to_finset ∪ y𝔹.to_finset ⊢ (δ c).F)
   : β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β ((δ c).F) (β c) ∷ 𝕆 :=
 begin
-  generalize h : β c = βₗ, 
+  generalize h : β c = βₗ,
   rw h at *,
   clear h,
   simp only [finset.subset_iff, mem_to_finset] at y𝕆_sub_FV,
@@ -628,10 +628,10 @@ begin
       apply inductive_weakening,
       apply linear.ret },
     { have : ¬(βₗ x = 𝕆 ∧ x ∉ finset.empty),
-      { simp only [not_and], 
+      { simp only [not_and],
         intro h,
-        rw y𝔹_𝔹 x wf_x_def at h, 
-        simp only [] at h, 
+        rw y𝔹_𝔹 x wf_x_def at h,
+        simp only [] at h,
         contradiction },
       rw if_neg this,
       apply linear.inc_𝔹,
@@ -641,7 +641,7 @@ begin
       have : y𝕆 = ∅,
       { apply eq_zero_of_forall_not_mem,
         simp only [finset.insert_empty_eq_singleton, finset.mem_singleton] at y𝕆_sub_FV,
-        intros y y_in_y𝕆, 
+        intros y y_in_y𝕆,
         have x_in_y𝕆, from (y𝕆_sub_FV y_in_y𝕆).subst y_in_y𝕆,
         have dj : multiset.disjoint y𝕆 y𝔹,
         { rw disjoint_iff_ne,
@@ -651,11 +651,11 @@ begin
           rw y𝔹_𝔹 b b_in_y𝔹 at this,
           contradiction },
         let := disjoint_right.mp dj wf_x_def,
-        contradiction }, 
+        contradiction },
       simp only [this, empty_eq_zero, zero_add, map_zero],
       rw ←singleton_add,
       apply inductive_weakening,
-      apply linear.ret } 
+      apply linear.ret }
   },
   case «let» : y e F ih {
     with_cases { cases e },
@@ -666,7 +666,7 @@ begin
         { let := subset_iff.mp (FV_sub_wf_context wf),
           simp only [FV, FV_expr, mem_union, finset.singleton_val, to_finset_val,
             finset.insert_empty_eq_singleton, mem_erase_dup, finset.erase_val,
-            finset.union_val, mem_singleton] at this, 
+            finset.union_val, mem_singleton] at this,
           have h : x ∈ y𝕆 ∨ x ∈ y𝔹, from this (or.inl rfl),
           cases h,
           { assumption },
@@ -732,7 +732,7 @@ begin
               { exact or.inr (or.inl (or.inr h')) },
               { exact or.inr (or.inr h') } } },
           { cases wf,
-            simp only [FV, FV_expr, mem_cons, finset.insert_empty_eq_singleton, finset.mem_union, 
+            simp only [FV, FV_expr, mem_cons, finset.insert_empty_eq_singleton, finset.mem_union,
               finset.mem_singleton, finset.mem_erase] at ⊢ y𝕆_sub_FV,
             intros z h',
             cases h',
@@ -743,12 +743,12 @@ begin
               rw nodup_cons at nd_y𝕆,
               exact absurd h' nd_y𝕆.left },
             { exact h''.right } } },
-        simp only [not_and_distrib, not_not] at h_1, 
+        simp only [not_and_distrib, not_not] at h_1,
         rw [←ne.def, not_𝕆_iff_𝔹] at h_1,
         cases h_1,
         { rw h at h_1, contradiction },
         rw ←cons_add,
-        rw ←map_cons (∶ 𝕆), 
+        rw ←map_cons (∶ 𝕆),
         apply ih,
         any_goals { assumption },
         { cases wf,
@@ -804,7 +804,7 @@ begin
       { let := subset_iff.mp (FV_sub_wf_context wf),
         simp only [FV, FV_expr, mem_union, finset.singleton_val, to_finset_val,
           finset.insert_empty_eq_singleton, mem_erase_dup, finset.erase_val,
-          finset.union_val, mem_singleton] at this, 
+          finset.union_val, mem_singleton] at this,
         have h : x ∈ y𝕆 ∨ x ∈ y𝔹, from this (or.inl rfl),
         cases h,
         { rw y𝕆_𝕆 x h_1 at h,
@@ -857,14 +857,14 @@ begin
         { rw h' at z_in_y𝕆,
           rw y𝕆_𝕆 x z_in_y𝕆 at h,
           contradiction },
-        { exact h'.right } } 
-    }, 
+        { exact h'.right } }
+    },
     case rc_correctness.expr.const_app_full : c' ys {
       unfold C,
       apply C_app_rc_insertion_correctness ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV,
       simp only [list.map_map],
       have : ∀ y ∈ ys, ((λ (yτ : var × lin_type), yτ.fst ∶ yτ.snd) ∘ (λ (y : var), (y, β c' y))) y = (λ (y : var), y ∶ β c' y) y,
-      { intros y' y'_in_ys, 
+      { intros y' y'_in_ys,
         refl },
       rw list.map_congr this,
       exact linear.const_app_full β ys c'
@@ -881,7 +881,7 @@ begin
       apply C_app_rc_insertion_correctness ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV,
       rw list.map_map,
       have : ∀ y ∈ ys, ((λ (yτ : var × lin_type), yτ.fst ∶ yτ.snd) ∘ (λ (y : var), (y, 𝕆))) y = (λ (y : var), y ∶ 𝕆) y,
-      { intros y' y'_in_ys, 
+      { intros y' y'_in_ys,
         refl },
       rw list.map_congr this,
       exact linear.const_app_part β ys c'
@@ -897,7 +897,7 @@ begin
       apply C_app_rc_insertion_correctness ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV,
       rw list.map_map,
       have : ∀ y ∈ ys, ((λ (yτ : var × lin_type), yτ.fst ∶ yτ.snd) ∘ (λ (y : var), (y, 𝕆))) y = (λ (y : var), y ∶ 𝕆) y,
-      { intros y' y'_in_ys, 
+      { intros y' y'_in_ys,
         refl },
       rw list.map_congr this,
       exact linear.ctor_app β ys i
@@ -914,16 +914,16 @@ begin
     cases wf,
     simp only [mem_union, ndunion_eq_union, to_finset_val, nodup_erase_dup, mem_erase_dup, finset.mem_mk] at wf_x_def,
     cases wf_x_def,
-    apply linear.case_𝕆, 
+    apply linear.case_𝕆,
     { simpa },
     swap,
     apply linear.case_𝔹,
     { simpa },
-    all_goals { 
+    all_goals {
       intros F' h,
-      rw list.map_wf_eq_map at h, 
+      rw list.map_wf_eq_map at h,
       rw list.mem_map at h,
-      rcases h with ⟨F, ⟨F_in_Fs, F'_def⟩⟩, 
+      rcases h with ⟨F, ⟨F_in_Fs, F'_def⟩⟩,
       rw ←F'_def,
       apply inductive_dec,
       any_goals { assumption },
@@ -936,7 +936,7 @@ begin
       { exact finset.sort_nodup var_le (FV (case x of Fs)) },
       apply ih,
       any_goals { assumption },
-      { apply nodup_filter, 
+      { apply nodup_filter,
         assumption },
       { simp only [and_imp, mem_filter, finset.mem_sort],
         intros y y_in_y𝕆 h,
@@ -945,7 +945,7 @@ begin
         apply wf_FV_sandwich _ _ wf,
         { rw finset.subset_iff,
           rw subset_iff at FV_sub_y𝕆_y𝔹,
-          simp only [FV, list.map_wf_eq_map, mem_ndinsert, mem_add, finset.insert_val] at FV_sub_y𝕆_y𝔹, 
+          simp only [FV, list.map_wf_eq_map, mem_ndinsert, mem_add, finset.insert_val] at FV_sub_y𝕆_y𝔹,
           simp [FV, list.map_wf_eq_map, not_or_distrib],
           intros y y_in_FV,
           replace FV_sub_y𝕆_y𝔹 := @FV_sub_y𝕆_y𝔹 y,
@@ -965,7 +965,7 @@ begin
           cases h,
           { exact or.inl (h.left) },
           { exact or.inr h } } },
-      { simp only [and_imp, mem_filter, FV_C_eq_FV, imp_self, forall_true_iff] } 
+      { simp only [and_imp, mem_filter, FV_C_eq_FV, imp_self, forall_true_iff] }
     }
   },
   case «inc» : x F ih {
@@ -990,7 +990,7 @@ begin
   let Γ := (↑(list.map (λ (y : var), y ∶ β c y) ys) : multiset typed_var),
   let y𝕆 := filter (λ y, β c y = 𝕆) ys,
   let y𝔹 := filter (λ y, β c y = 𝔹) ys,
-  obtain ⟨y𝕆_𝕆, y𝔹_𝔹⟩ 
+  obtain ⟨y𝕆_𝕆, y𝔹_𝔹⟩
     : (∀ y ∈ y𝕆, β c y = 𝕆) ∧ (∀ y ∈ y𝔹, β c y = 𝔹),
   { repeat { split }; { intros y h, rw (mem_filter.mp h).right } },
   obtain ⟨y𝕆_sub_ys, y𝔹_sub_ys⟩ : (y𝕆 ⊆ ys ∧ y𝔹 ⊆ ys),
@@ -998,29 +998,29 @@ begin
   obtain ⟨ys_𝕆_sub_y𝕆, ys_𝔹_sub_y𝔹⟩
     : (∀ y ∈ ys, β c y = 𝕆 → y ∈ y𝕆) ∧ (∀ y ∈ ys, β c y = 𝔹 → y ∈ y𝔹),
   { repeat { split };
-    { intros y y_in_ys y_ty, 
+    { intros y y_in_ys y_ty,
       simp only [mem_filter, mem_coe], try { rw ←coe_eq_coe }, exact ⟨y_in_ys, y_ty⟩ } },
   obtain ⟨nd_y𝕆, nd_y𝔹⟩ : multiset.nodup y𝕆 ∧ multiset.nodup y𝔹,
   { split; exact nodup_filter _ (coe_nodup.mpr wf_const_wf_nd_ys) },
   have ys_subdiv : ↑ys = y𝕆 + y𝔹,
-  { have : ∀ y ∈ (↑ys : multiset var), β c y = 𝔹 ↔ β c y ≠ 𝕆, 
+  { have : ∀ y ∈ (↑ys : multiset var), β c y = 𝔹 ↔ β c y ≠ 𝕆,
     { intros y y_in_ys,
       split; intro h; cases β c y; simp at h ⊢; assumption },
     simp only [y𝕆, y𝔹],
     rw filter_congr this,
     exact (filter_add_not ↑ys).symm },
   have Γ_subdiv : ↑(list.map (λ (y : var), y ∶ β c y) ys) = (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹),
-  { have : ↑(list.map (λ (y : var), y ∶ β c y) ys) = map (λ (y : var), y ∶ β c y) ↑ys, 
+  { have : ↑(list.map (λ (y : var), y ∶ β c y) ys) = map (λ (y : var), y ∶ β c y) ↑ys,
       from rfl,
     rw this,
     rw ys_subdiv,
-    simp only [map_add],  
+    simp only [map_add],
     have : ∀ (τ : lin_type) (yτ : multiset var), (∀ y ∈ yτ, β c y = τ) →
-      ∀ y ∈ yτ, (y ∶ β c y) = (y ∶ τ), 
-    { intros τ yτ h y y_in_yτ, 
+      ∀ y ∈ yτ, (y ∶ β c y) = (y ∶ τ),
+    { intros τ yτ h y y_in_yτ,
       rw h y y_in_yτ },
     simp only [map_congr (this 𝕆 y𝕆 y𝕆_𝕆), map_congr (this 𝔹 y𝔹 y𝔹_𝔹)] },
-  have y𝕆_sub_FV : y𝕆.to_finset ⊆ FV (dec_𝕆 ((δ c).ys) (C β ((δ c).F) (β c)) (β c)), 
+  have y𝕆_sub_FV : y𝕆.to_finset ⊆ FV (dec_𝕆 ((δ c).ys) (C β ((δ c).F) (β c)) (β c)),
   { rw finset.subset_iff,
     intros y y_in_y𝕆,
     simp only [mem_filter, mem_coe, mem_to_finset] at y_in_y𝕆,
@@ -1029,10 +1029,10 @@ begin
   unfold list.to_finset at wf,
   rw ys_subdiv at wf,
   have : ↑ys ⊆ y𝕆 + y𝔹, { rw ys_subdiv, exact subset.refl _ },
-  apply inductive_dec y𝕆_sub_ys this wf_const_wf_nd_ys y𝕆_𝕆 y𝔹_𝔹 nd_y𝕆 nd_y𝔹, 
+  apply inductive_dec y𝕆_sub_ys this wf_const_wf_nd_ys y𝕆_𝕆 y𝔹_𝔹 nd_y𝕆 nd_y𝔹,
   let y𝕆' := filter (λ (y : var), y ∈ FV (C β ((δ c).F) (β c))) y𝕆,
   have y𝕆'_𝕆 : ∀ y ∈ y𝕆', β c y = 𝕆,
-  { simp only [and_imp, mem_filter, mem_coe], 
+  { simp only [and_imp, mem_filter, mem_coe],
     intros y y_in_ys y_𝕆 y_in_FV,
     assumption },
   have nd_y𝕆' : nodup y𝕆', from nodup_filter _ nd_y𝕆,
@@ -1040,7 +1040,7 @@ begin
   have y𝕆'_sub_FV : y𝕆'.to_finset ⊆ FV (δ c).F,
   { rw finset.subset_iff, rw finset.subset_iff at y𝕆_sub_FV, rw subset_iff at y𝕆'_sub_y𝕆,
     simp only [mem_to_finset], simp only [mem_to_finset] at y𝕆_sub_FV,
-    rw FV_dec_𝕆_filter at y𝕆_sub_FV, 
+    rw FV_dec_𝕆_filter at y𝕆_sub_FV,
     intros x x_in_y𝕆',
     have h, from y𝕆_sub_FV (y𝕆'_sub_y𝕆 x_in_y𝕆'),
     simp only [mem_filter, mem_coe] at x_in_y𝕆',
@@ -1056,14 +1056,14 @@ begin
       rw finset.subset_iff,
       intros x x_in_FV,
       let := this x_in_FV,
-      simp only [mem_filter, mem_coe, finset.mem_union, mem_to_finset] at this ⊢, 
+      simp only [mem_filter, mem_coe, finset.mem_union, mem_to_finset] at this ⊢,
       cases this,
       { rw FV_C_eq_FV,
         exact or.inl ⟨this_1, x_in_FV ⟩ },
       { exact or.inr this_1 } },
     have h2 : to_finset y𝕆' ∪ to_finset y𝔹 ⊆ to_finset y𝕆 ∪ to_finset y𝔹,
     { rw subset_iff at y𝕆'_sub_y𝕆,
-      simp only [finset.subset_iff, finset.mem_union, mem_to_finset], 
+      simp only [finset.subset_iff, finset.mem_union, mem_to_finset],
       intros x h,
       cases h,
       { exact or.inl (y𝕆'_sub_y𝕆 h) },

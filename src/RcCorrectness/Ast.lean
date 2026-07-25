@@ -5,7 +5,7 @@ namespace rc_correctness
 -- ast defs
 def var := ℕ
 def const := ℕ
-def cnstr := ℕ 
+def cnstr := ℕ
 
 inductive expr : Type
 | const_app_full (c : const) (ys : list var) : expr
@@ -15,7 +15,7 @@ inductive expr : Type
 | proj (i : cnstr) (x : var) : expr
 
 inductive fn_body : Type
-| ret (x : var) : fn_body 
+| ret (x : var) : fn_body
 | «let» (x : var) (e : expr) (F : fn_body) : fn_body
 | case (x : var) (Fs : list fn_body) : fn_body
 | inc (x : var) (F : fn_body) : fn_body
@@ -48,7 +48,7 @@ notation `inc ` x `; ` F := fn_body.inc x F
 notation `dec ` x `; ` F := fn_body.dec x F
 
 -- rc
-instance expr_to_rc : has_coe expr rc := ⟨rc.expr⟩ 
+instance expr_to_rc : has_coe expr rc := ⟨rc.expr⟩
 instance fn_body_to_rc : has_coe fn_body rc := ⟨rc.fn_body⟩
 
 
@@ -61,9 +61,9 @@ def {l} fn_body.rec_wf (C : fn_body → Sort l)
   («dec» : Π (x : var) (F : fn_body) (F_ih : C F), C (dec x; F)) : Π (x : fn_body), C x
 | (fn_body.ret x) := «ret» x
 | (x ≔ e; F) := «let» x e F (fn_body.rec_wf F)
-| (case x of Fs) := «case» x Fs (λ F h, 
-    have sizeof F < 1 + sizeof Fs, 
-      from nat.lt_add_left _ _ _ 
+| (case x of Fs) := «case» x Fs (λ F h,
+    have sizeof F < 1 + sizeof Fs,
+      from nat.lt_add_left _ _ _
         (list.sizeof_lt_sizeof_of_mem h),
     fn_body.rec_wf F)
 | (inc x; F) := «inc» x F (fn_body.rec_wf F)
@@ -111,10 +111,10 @@ def expr_repr : expr → string
 | (c⟦ys…⟧) := c.repr ++ "⟦" ++ ys.repr ++ "…⟧"
 | (c⟦ys…, _⟧) := c.repr ++ "⟦" ++ ys.repr ++ "…, _⟧"
 | (x⟦y⟧) := x.repr ++ "⟦" ++ y.repr ++ "⟧"
-| (⟪ys⟫i) := "⟪" ++ ys.repr ++ "⟫" ++ i.repr 
+| (⟪ys⟫i) := "⟪" ++ ys.repr ++ "⟫" ++ i.repr
 | (x[i]) := x.repr ++ "[" ++ i.repr ++ "]"
 
-instance expr_has_repr : has_repr expr := ⟨expr_repr⟩ 
+instance expr_has_repr : has_repr expr := ⟨expr_repr⟩
 
 -- fn_body
 def fn_body_repr : fn_body → string
@@ -124,6 +124,6 @@ def fn_body_repr : fn_body → string
 | (inc x; F) := "inc " ++ x.repr ++ "; " ++ fn_body_repr F
 | (dec x; F) := "dec " ++ x.repr ++ "; " ++ fn_body_repr F
 
-instance fn_body_has_repr : has_repr fn_body := ⟨fn_body_repr⟩ 
+instance fn_body_has_repr : has_repr fn_body := ⟨fn_body_repr⟩
 
 end rc_correctness

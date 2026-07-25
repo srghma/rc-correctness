@@ -19,7 +19,7 @@ namespace list
   end
 
   def map_wf {α β : Type*} [has_sizeof α] (xs : list α) (f : Π (a : α), (sizeof a < 1 + sizeof xs) → β) : list β :=
-  xs.attach.map (λ p, have sizeof p.val < 1 + sizeof xs, 
+  xs.attach.map (λ p, have sizeof p.val < 1 + sizeof xs,
                         from nat.lt_add_left _ _ _ (list.sizeof_lt_sizeof_of_mem p.property),
                       f p.val this)
 
@@ -31,7 +31,7 @@ namespace list
     induction xs,
     { rw list.filter_nil },
     by_cases p xs_hd,
-    { rw filter_cons_of_pos xs_tl h, 
+    { rw filter_cons_of_pos xs_tl h,
       unfold_sizeof,
       assumption },
     { rw filter_cons_of_neg xs_tl h,
@@ -50,11 +50,11 @@ namespace list
     intros b a a_in_xs h',
     exact h'.subst (h a a_in_xs)
   end
-  
-  def group {α : Type*} [p : setoid α] [decidable_rel p.r] : list α → list (list α) 
+
+  def group {α : Type*} [p : setoid α] [decidable_rel p.r] : list α → list (list α)
   | []        := []
-  | (x :: xs) := have list.sizeof (filter (not ∘ (≈ x)) xs) < 1 + list.sizeof xs, from 
-    begin 
+  | (x :: xs) := have list.sizeof (filter (not ∘ (≈ x)) xs) < 1 + list.sizeof xs, from
+    begin
       have h : list.sizeof (filter (not ∘ (≈ x)) xs) ≤ list.sizeof xs, from sizeof_filter_le_sizeof _ xs,
       rw nat.add_comm,
       rw ←nat.succ_eq_add_one,
@@ -73,7 +73,7 @@ namespace list
       exact nat.zero_lt_one_add (list.sizeof ys_tl_tl) },
     induction ys;
     unfold_sizeof,
-    { simp only [add_comm, length] at h, 
+    { simp only [add_comm, length] at h,
       exact false.elim (nat.not_succ_le_zero (1 + length xs_tl) h) },
     simp only [add_comm, length, add_lt_add_iff_left] at h,
     exact xs_ih h
@@ -81,15 +81,15 @@ namespace list
 
   @[elab_as_eliminator] def strong_induction_on {α : Type*} {p : list α → Sort*} :
     ∀ xs : list α, (∀ xs, (∀ ys, length ys < length xs → p ys) → p xs) → p xs
-  | xs := λ ih, ih xs (λ ys h1, 
+  | xs := λ ih, ih xs (λ ys h1,
     have list.sizeof ys < list.sizeof xs, from sizeof_lt_of_length_lt h1,
     strong_induction_on ys ih)
 
-  lemma length_filter_le_length {α : Type*} (p : α → Prop) [decidable_pred p] (xs : list α) : 
-    length (filter p xs) <= length xs := 
+  lemma length_filter_le_length {α : Type*} (p : α → Prop) [decidable_pred p] (xs : list α) :
+    length (filter p xs) <= length xs :=
   length_le_of_sublist (filter_sublist xs)
 
-  lemma filter_append_not_filter_perm {α : Type*} (p : α → Prop) [decidable_pred p] (xs : list α) : 
+  lemma filter_append_not_filter_perm {α : Type*} (p : α → Prop) [decidable_pred p] (xs : list α) :
     filter p xs ++ filter (not ∘ p) xs ~ xs :=
   begin
     letI := classical.dec_eq α,
@@ -104,16 +104,16 @@ namespace list
       apply congr_arg (+ ite (a = xs_hd) 1 0),
       assumption },
     { rw @filter_cons_of_pos _ (not ∘ p) _ _ xs_tl h,
-      rw filter_cons_of_neg xs_tl h, 
+      rw filter_cons_of_neg xs_tl h,
       simp only [count_append, count_cons'],
       rw ←add_assoc,
       apply congr_arg (+ ite (a = xs_hd) 1 0),
       rwa ←count_append }
   end
 
-  lemma length_filter_lt_length_cons {α : Type*} (p : α → Prop) [decidable_pred p] (x : α) (xs : list α) : 
+  lemma length_filter_lt_length_cons {α : Type*} (p : α → Prop) [decidable_pred p] (x : α) (xs : list α) :
     length (filter p xs) < length (x :: xs) :=
-  calc length (filter p xs) 
+  calc length (filter p xs)
         ≤ length xs        : length_filter_le_length _ xs
     ... < length (x :: xs) : by simp only [lt_add_iff_pos_left, add_comm, length, nat.zero_lt_one]
 
@@ -141,7 +141,7 @@ namespace list
     exact filter_append_not_filter_perm (≈ xs_hd) xs_tl
   end
 
-  lemma group_equiv {α : Type*} [p : setoid α] [decidable_rel p.r] {xs : list α} : 
+  lemma group_equiv {α : Type*} [p : setoid α] [decidable_rel p.r] {xs : list α} :
     ∀ g ∈ group xs, ∀ x y ∈ g, x ≈ y :=
   begin
     intros g g_group x y x_in_g y_in_g,
@@ -164,7 +164,7 @@ namespace list
           exact x_in_g.right },
         { transitivity,
           { exact x_in_g.right },
-          { symmetry, 
+          { symmetry,
             exact y_in_g.right } } } },
     exact ih _ (length_filter_lt_length_cons _ xs_hd xs_tl) g_group
   end
@@ -181,7 +181,7 @@ namespace list
     exact ih (filter (not ∘ λ (_x : α), _x ≈ xs_hd) xs_tl) (length_filter_lt_length_cons _ xs_hd xs_tl)
   end
 
-  lemma group_equiv_disjoint' {α : Type*} [p : setoid α] [decidable_rel p.r] (xs : list α) : 
+  lemma group_equiv_disjoint' {α : Type*} [p : setoid α] [decidable_rel p.r] (xs : list α) :
     ∀ g1 g2 ∈ group xs, (∀ x1 ∈ g1, ∀ x2 ∈ g2, x1 ≈ x2) → g1 = g2 :=
   begin
     intros g1 g2 g1_group g2_group h,
@@ -196,13 +196,13 @@ namespace list
       { rw g2_group at * },
       { cases g2,
         { exact absurd g2_group (nil_not_mem_group _) },
-        have h3 : ∃ l, l ∈ group (filter (not ∘ λ (_x : α), _x ≈ xs_hd) xs_tl) ∧ g2_hd ∈ l, 
+        have h3 : ∃ l, l ∈ group (filter (not ∘ λ (_x : α), _x ≈ xs_hd) xs_tl) ∧ g2_hd ∈ l,
         from ⟨g2_hd :: g2_tl, ⟨g2_group, mem_cons_self g2_hd g2_tl⟩⟩,
         replace h3 := mem_join.mpr h3,
         rw mem_of_perm (join_group_perm _) at h3,
         replace h3 := of_mem_filter h3,
         simp only [function.comp_app] at h3,
-        have h4 : g2_hd ≈ xs_hd, 
+        have h4 : g2_hd ≈ xs_hd,
         { symmetry,
           exact h xs_hd (mem_cons_self xs_hd _) g2_hd (mem_cons_self g2_hd g2_tl) },
         contradiction } },
@@ -210,7 +210,7 @@ namespace list
     rw g2_group at *,
     { cases g1,
       { exact absurd g1_group (nil_not_mem_group _) },
-      have h3 : ∃ l, l ∈ group (filter (not ∘ λ (_x : α), _x ≈ xs_hd) xs_tl) ∧ g1_hd ∈ l, 
+      have h3 : ∃ l, l ∈ group (filter (not ∘ λ (_x : α), _x ≈ xs_hd) xs_tl) ∧ g1_hd ∈ l,
       from ⟨g1_hd :: g1_tl, ⟨g1_group, mem_cons_self g1_hd g1_tl⟩⟩,
       replace h3 := mem_join.mpr h3,
       rw mem_of_perm (join_group_perm _) at h3,
@@ -221,9 +221,9 @@ namespace list
     exact ih _ (length_filter_lt_length_cons _ xs_hd xs_tl) g1_group g2_group
   end
 
-  section group_equiv_disjoint 
+  section group_equiv_disjoint
     local attribute [instance] classical.prop_decidable
-    lemma group_equiv_disjoint {α : Type*} [p : setoid α] [d : decidable_rel p.r] (xs : list α) : 
+    lemma group_equiv_disjoint {α : Type*} [p : setoid α] [d : decidable_rel p.r] (xs : list α) :
       ∀ g1 g2 ∈ group xs, g1 ≠ g2 → ∀ x1 ∈ g1, ∀ x2 ∈ g2, ¬(x1 ≈ x2) :=
     begin
       intros g1 g2 g1_group g2_group,
@@ -239,7 +239,7 @@ namespace list
     end
   end group_equiv_disjoint
 
-  lemma nodup_perm_group {α : Type*} [decidable_eq α] [p : setoid α] [decidable_rel p.r] (xs : list α) : 
+  lemma nodup_perm_group {α : Type*} [decidable_eq α] [p : setoid α] [decidable_rel p.r] (xs : list α) :
     pairwise (λ a b, ¬(a ~ b)) (group xs) :=
   begin
     induction xs using list.strong_induction_on with xs ih,
@@ -249,11 +249,11 @@ namespace list
     simp only [group, pairwise_cons],
     split,
     { intros a h h',
-      have h2 : ∃ l, l ∈ group (filter (not ∘ λ (_x : α), _x ≈ xs_hd) xs_tl) ∧ xs_hd ∈ l, 
+      have h2 : ∃ l, l ∈ group (filter (not ∘ λ (_x : α), _x ≈ xs_hd) xs_tl) ∧ xs_hd ∈ l,
       { use a,
         split,
         { assumption },
-        rw mem_of_perm h'.symm, 
+        rw mem_of_perm h'.symm,
         exact mem_cons_self xs_hd _ },
       replace h2 := mem_join.mpr h2,
       rw mem_of_perm (join_group_perm _) at h2,
@@ -301,7 +301,7 @@ namespace list
     exact absurd (setoid.refl a) (h' a a_in_g1 a a_in_g2)
   end
 
-  lemma group_perm_iff_group_sub {α : Type*} [p : setoid α] [decidable_rel p.r] (xs ys : list α) : 
+  lemma group_perm_iff_group_sub {α : Type*} [p : setoid α] [decidable_rel p.r] (xs ys : list α) :
     group xs ~ group ys ↔ group xs ⊆ group ys ∧ group ys ⊆ group xs :=
   begin
     letI := classical.dec_eq α,
@@ -313,7 +313,7 @@ namespace list
     intro g,
     have h1, from nat.of_le_succ (nodup_iff_count_le_one.mp (nodup_group xs) g),
     have h2, from nat.of_le_succ (nodup_iff_count_le_one.mp (nodup_group ys) g),
-    rw le_zero_iff_eq at h1 h2, 
+    rw le_zero_iff_eq at h1 h2,
     cases h1,
     { cases h2,
       { rw h1, rw h2 },
@@ -329,7 +329,7 @@ namespace list
       { rw h1, rw h2 } }
   end
 
-  lemma filter_equiv_mem_group {α : Type*} [p : setoid α] [decidable_rel p.r] {x : α} {xs : list α} (h : x ∈ xs) : 
+  lemma filter_equiv_mem_group {α : Type*} [p : setoid α] [decidable_rel p.r] {x : α} {xs : list α} (h : x ∈ xs) :
     filter (≈ x) xs ∈ group xs :=
   begin
     induction xs using list.strong_induction_on with xs ih,
@@ -358,7 +358,7 @@ namespace list
       simp only [function.comp_app],
       intro h',
       exact absurd (setoid.symm h') h_equiv },
-    have g, from ih _ (length_filter_lt_length_cons _ xs_hd xs_tl) h', 
+    have g, from ih _ (length_filter_lt_length_cons _ xs_hd xs_tl) h',
     rw filter_filter at g,
     simp only [function.comp_app] at g,
     have g' : ∀ y ∈ xs_tl, (y ≈ x ∧ ¬y ≈ xs_hd) ↔ y ≈ x,
@@ -374,14 +374,14 @@ namespace list
     rwa filter_congr g' at g
   end
 
-  lemma cons_eq_filter_of_group {α : Type*} [p : setoid α] [decidable_rel p.r] {g_hd : α} {xs g_tl : list α} 
-    (h : (g_hd :: g_tl : list α) ∈ group xs) : 
+  lemma cons_eq_filter_of_group {α : Type*} [p : setoid α] [decidable_rel p.r] {g_hd : α} {xs g_tl : list α}
+    (h : (g_hd :: g_tl : list α) ∈ group xs) :
     (g_hd :: g_tl : list α) = filter (≈ g_hd) xs :=
   begin
     induction xs using list.strong_induction_on with xs ih,
     cases xs,
     { simp only [group, not_mem_nil] at h, contradiction },
-    simp only [group, mem_cons_iff] at h, 
+    simp only [group, mem_cons_iff] at h,
     rcases h with ⟨hd_eq, h⟩,
     { rw hd_eq at *,
       rw h at *,
@@ -396,7 +396,7 @@ namespace list
         { rintros ⟨a, b⟩,
           exact absurd (setoid.trans a (setoid.symm g')) b },
         { intro f, contradiction } },
-       rw filter_congr eqv at g, 
+       rw filter_congr eqv at g,
        simp only [filter_false] at g,
        contradiction },
     rw @filter_cons_of_neg _ (λ y, y ≈ g_hd) _ xs_hd xs_tl g',
@@ -404,7 +404,7 @@ namespace list
     { intros y y_in_tl,
       split,
       { intro x, exact x.left },
-      { intro y_eq_g_hd, 
+      { intro y_eq_g_hd,
         split,
         { assumption },
         { intro y_eq_xs_hd,
@@ -447,8 +447,8 @@ namespace list
     set gy := filter (≈ gx_hd) ys with gy_def,
     use gy,
     have g : gx_hd ∈ ys,
-    from (mem_of_perm h).mp 
-      ((mem_of_perm (join_group_perm xs)).mp 
+    from (mem_of_perm h).mp
+      ((mem_of_perm (join_group_perm xs)).mp
         (mem_join_of_mem gx_group (mem_cons_self gx_hd gx_tl))),
     use filter_equiv_mem_group g,
     rw gy_def,
@@ -459,11 +459,11 @@ namespace list
 
   section map_on_of_nodup
     local attribute [instance] classical.prop_decidable
-    lemma inj_on_of_nodup_map {α β : Type*} {f : α → β} {s : list α} (nd : nodup (map f s)) 
-      {x : α} (x_in_s : x ∈ s) {y : α} (y_in_s : y ∈ s) (f_eq : f x = f y) : x = y := 
+    lemma inj_on_of_nodup_map {α β : Type*} {f : α → β} {s : list α} (nd : nodup (map f s))
+      {x : α} (x_in_s : x ∈ s) {y : α} (y_in_s : y ∈ s) (f_eq : f x = f y) : x = y :=
     begin
       unfold nodup at nd,
-      rw pairwise_map at nd, 
+      rw pairwise_map at nd,
       have s : symmetric (λ (a b : α), f a ≠ f b),
       { unfold symmetric,
         intros x y,
@@ -480,7 +480,7 @@ namespace multiset
   def group' {α : Type*} [p : setoid α] [decidable_rel p.r] (xs : list α) : multiset (multiset α) :=
   ↑(list.map (λ g, (↑g : multiset α)) (list.group xs))
 
-  lemma nodup_map_coe_of_perm_nodup {α : Type*} [p : setoid α] [decidable_rel p.r] (xs : list (list α)) (h : list.pairwise (λ a b, ¬(a ~ b)) xs) : 
+  lemma nodup_map_coe_of_perm_nodup {α : Type*} [p : setoid α] [decidable_rel p.r] (xs : list (list α)) (h : list.pairwise (λ a b, ¬(a ~ b)) xs) :
     list.nodup (list.map coe xs : list (multiset α)) :=
   begin
     letI := classical.dec_eq α,
@@ -508,9 +508,9 @@ namespace multiset
     letI := classical.dec_eq α,
     unfold group',
     simp only [coe_eq_coe],
-    rw list.perm_ext (nodup_map_coe_of_perm_nodup _ (list.nodup_perm_group xs)) 
+    rw list.perm_ext (nodup_map_coe_of_perm_nodup _ (list.nodup_perm_group xs))
       (nodup_map_coe_of_perm_nodup _ (list.nodup_perm_group ys)),
-    simp only [list.mem_map], 
+    simp only [list.mem_map],
     intro s,
     split,
     { rintro ⟨ax, ax_group, ax_eq_s⟩,
@@ -544,7 +544,7 @@ namespace multiset
     contradiction
   end
 
-  lemma group'_equiv {α : Type*} [p : setoid α] [decidable_rel p.r] {xs : list α} : 
+  lemma group'_equiv {α : Type*} [p : setoid α] [decidable_rel p.r] {xs : list α} :
     ∀ g ∈ group' xs, ∀ x y ∈ g, x ≈ y :=
   begin
     simp only [group', and_imp, list.mem_map, mem_coe, exists_imp_distrib],
@@ -567,7 +567,7 @@ namespace multiset
     exact absurd (setoid.symm h') (h x2 x2_in_x x1 x1_in_y)
   end
 
-  lemma filter_equiv_mem_group' {α : Type*} [p : setoid α] [decidable_rel p.r] {x : α} {xs : list α} (h : x ∈ xs) : 
+  lemma filter_equiv_mem_group' {α : Type*} [p : setoid α] [decidable_rel p.r] {x : α} {xs : list α} (h : x ∈ xs) :
     filter (≈ x) xs ∈ group' xs :=
   begin
     simp only [group', coe_filter, coe_eq_coe, list.mem_map, mem_coe],
@@ -582,10 +582,10 @@ namespace multiset
   begin
     rw h,
     exact ⟨subset.refl ys, subset.refl ys⟩
-  end 
+  end
 
   lemma cons_eq_filter_of_group' {α : Type*} [p : setoid α] [decidable_rel p.r] {g_hd : α} {g_tl : multiset α} {xs : list α}
-    (h : g_hd :: g_tl ∈ group' xs) : 
+    (h : g_hd :: g_tl ∈ group' xs) :
     g_hd :: g_tl = filter (≈ g_hd) xs :=
   begin
     letI := classical.dec_eq α,
@@ -635,7 +635,7 @@ namespace multiset
   lemma nil_not_mem_group {α : Type*} [p : setoid α] [decidable_rel p.r] (xs : multiset α) : ∅ ∉ group xs :=
   quot.induction_on xs nil_not_mem_group'
 
-  lemma group_equiv {α : Type*} [p : setoid α] [decidable_rel p.r] {xs : multiset α} : 
+  lemma group_equiv {α : Type*} [p : setoid α] [decidable_rel p.r] {xs : multiset α} :
     ∀ g ∈ group xs, ∀ x y ∈ g, x ≈ y :=
   quot.induction_on xs (@group'_equiv _ _ _)
 
@@ -643,7 +643,7 @@ namespace multiset
     pairwise (λ g1 g2 : multiset α, ∀ x1 ∈ g1, ∀ x2 ∈ g2, ¬(x1 ≈ x2)) (group xs) :=
   quot.induction_on xs pairwise_equiv_disjoint_group'
 
-  lemma filter_equiv_mem_group {α : Type*} [p : setoid α] [decidable_rel p.r] {x : α} {xs : multiset α} : 
+  lemma filter_equiv_mem_group {α : Type*} [p : setoid α] [decidable_rel p.r] {x : α} {xs : multiset α} :
     x ∈ xs → filter (≈ x) xs ∈ group xs :=
   quot.induction_on xs (λ l, filter_equiv_mem_group')
 
@@ -655,11 +655,11 @@ namespace multiset
     g1 ∈ group xs → g2 ∈ group xs → (∃ x ∈ g1, ∃ y ∈ g2, x ≈ y) → g1 = g2 :=
   quot.induction_on xs (λ l, @group'_eq_of_mem_equiv _ _ _ l _ _)
 
-  @[simp] lemma filter_true {α : Type*} {h : decidable_pred (λ a : α, true)} (s : multiset α) : 
+  @[simp] lemma filter_true {α : Type*} {h : decidable_pred (λ a : α, true)} (s : multiset α) :
     @filter α (λ _, true) h s = s :=
   quot.induction_on s (λ l, congr_arg coe (list.filter_true l))
 
-  @[simp] lemma filter_false {α : Type*} {h : decidable_pred (λ a : α, false)} (s : multiset α) : 
+  @[simp] lemma filter_false {α : Type*} {h : decidable_pred (λ a : α, false)} (s : multiset α) :
     @filter α (λ _, false) h s = [] :=
   quot.induction_on s (λ l, congr_arg coe (list.filter_false l))
 
@@ -675,11 +675,11 @@ namespace multiset
     exact h x x_in_s p1_x
   end
 
-  lemma inj_on_of_nodup_map {α β : Type*} {f : α → β} {s : multiset α} : 
-    nodup (map f s) → ∀ x ∈ s, ∀ y ∈ s, f x = f y → x = y := 
+  lemma inj_on_of_nodup_map {α β : Type*} {f : α → β} {s : multiset α} :
+    nodup (map f s) → ∀ x ∈ s, ∀ y ∈ s, f x = f y → x = y :=
   quot.induction_on s (λ l, @list.inj_on_of_nodup_map α β f l)
 
-  lemma map_add_of_disjoint {α β : Type*} [decidable_eq α] (f1 f2 : α → β) {s1 s2 : multiset α} (h : disjoint s1 s2) : 
+  lemma map_add_of_disjoint {α β : Type*} [decidable_eq α] (f1 f2 : α → β) {s1 s2 : multiset α} (h : disjoint s1 s2) :
     map f1 s1 + map f2 s2 = map (λ x, if x ∈ s1 then f1 x else f2 x) (s1 + s2) :=
   begin
     simp only [map_add],
@@ -695,22 +695,22 @@ namespace multiset
         exact h.symm x_in_s2 },
       rw map_congr h2' },
     rw h1, rw h2
-  end 
+  end
 end multiset
 
 namespace finset
-  def join {α : Type*} [decidable_eq α] (xs : list (finset α)) : finset α := xs.foldr (∪) ∅ 
+  def join {α : Type*} [decidable_eq α] (xs : list (finset α)) : finset α := xs.foldr (∪) ∅
 
   @[simp] theorem mem_join {α : Type*} [decidable_eq α] {x : α} {xs : list (finset α)} : x ∈ join xs ↔ ∃ S ∈ xs, x ∈ S :=
   begin
     apply iff.intro,
-    { intro h, 
+    { intro h,
       induction xs;
       unfold join at *,
       { simp only [list.foldr_nil, not_mem_empty] at h,
         contradiction },
       { simp only [mem_union, list.foldr_cons] at h,
-        cases h, 
+        cases h,
         { exact ⟨xs_hd, ⟨or.inl rfl, h⟩⟩ },
         { rcases xs_ih h with ⟨S, S_in_tl, x_in_S⟩,
           exact ⟨S, ⟨or.inr S_in_tl, x_in_S⟩⟩ } } },
@@ -720,21 +720,21 @@ namespace finset
         contradiction },
       { unfold join at *,
         rcases h with ⟨S, S_in_hd_or_tl, x_in_S⟩,
-        simp only [mem_union, list.foldr_cons, list.mem_cons_iff] at *, 
+        simp only [mem_union, list.foldr_cons, list.mem_cons_iff] at *,
         cases S_in_hd_or_tl,
-        { rw S_in_hd_or_tl at x_in_S, 
+        { rw S_in_hd_or_tl at x_in_S,
           exact or.inl x_in_S },
         { exact or.inr (xs_ih ⟨S, S_in_hd_or_tl, x_in_S⟩) } } }
     end
 
-  @[simp] lemma erase_insert_eq_erase {α : Type*} [decidable_eq α] (s : finset α) (a : α) : 
+  @[simp] lemma erase_insert_eq_erase {α : Type*} [decidable_eq α] (s : finset α) (a : α) :
     erase (insert a s) a = erase s a :=
   begin
-    ext, 
+    ext,
     simp only [mem_insert, mem_erase, and_or_distrib_left, not_and_self, false_or]
   end
 
-  lemma erase_insert_eq_insert_erase {α : Type*} [decidable_eq α] {a b : α} (s : finset α) 
+  lemma erase_insert_eq_insert_erase {α : Type*} [decidable_eq α] {a b : α} (s : finset α)
     (h : a ≠ b) :
     erase (insert a s) b = insert a (erase s b) :=
   begin
@@ -769,5 +769,5 @@ end finset
 
 
 namespace function
-  notation f `[` a `↦` b `]` := function.update f a b 
+  notation f `[` a `↦` b `]` := function.update f a b
 end function

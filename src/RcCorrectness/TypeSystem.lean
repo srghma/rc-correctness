@@ -14,7 +14,7 @@ structure typed_var := (x : var) (ty : lin_type)
 notation x ` ∶ `:2 τ := typed_var.mk x τ
 notation xs ` [∶] `:2 τ := (list.map (λ x, (x ∶ τ)) xs : multiset typed_var)
 notation xs ` {∶} `:2 τ := multiset.map (λ x, (x ∶ τ)) xs
-notation c ` ∷ `:2 τ := typed_rc.mk c τ 
+notation c ` ∷ `:2 τ := typed_rc.mk c τ
 
 abbreviation type_context := multiset typed_var
 
@@ -24,7 +24,7 @@ open rc_correctness.lin_type
 
 inductive linear (β : const → var → lin_type) : type_context → typed_rc → Prop
 notation Γ ` ⊩ `:1 t := linear Γ t
-| weaken {Γ : type_context} {t : typed_rc} (x : var) 
+| weaken {Γ : type_context} {t : typed_rc} (x : var)
   (t_typed : Γ ⊩ t) :
   (x ∶ 𝔹) :: Γ ⊩ t
 | contract {Γ : type_context} {x : var} {t : typed_rc}
