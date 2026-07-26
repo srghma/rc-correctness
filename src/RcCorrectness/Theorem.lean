@@ -803,20 +803,13 @@ by
       apply inductive_weakening
       apply Linear.ret
   case let_ y e F ih  =>
-    have ih_C : ∀ (βₗ' : Var → LinType),
-      Multiset.Nodup y𝕆 →
-      Multiset.Nodup y𝔹 →
-      (∀ (y : Var), y ∈ y𝕆 → βₗ' y = 𝕆) →
-      (∀ (y : Var), y ∈ y𝔹 → βₗ' y = 𝔹) →
-      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
-      (∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body F) →
-      (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C β F βₗ') ∷ 𝕆) := by
-        intros βₗ' nd_y𝕆' nd_y𝔹' y𝕆_𝕆' y𝔹_𝔹' wf_F y𝕆_free'
-        have y𝕆_sub_FV_F : y𝕆.toFinset ⊆ fv_of_fn_body F := by
-          rw [Finset.subset_iff]
-          intros x x_in
-          exact y𝕆_free' (Multiset.mem_toFinset.mp x_in)
-        exact ih nd_y𝕆' nd_y𝔹' βₗ' y𝕆_𝕆' y𝔹_𝔹' y𝕆_sub_FV_F wf_F
+    have ih_C : C_app_rc_insertion_correctness_IH β δ F := by
+      intros y𝕆' y𝔹' βₗ' nd_y𝕆' nd_y𝔹' y𝕆_𝕆' y𝔹_𝔹' wf_F y𝕆_free'
+      have y𝕆_sub_FV_F : y𝕆'.toFinset ⊆ fv_of_fn_body F := by
+        rw [Finset.subset_iff]
+        intros x x_in
+        exact y𝕆_free' (Multiset.mem_toFinset.mp x_in)
+      exact ih nd_y𝕆' nd_y𝔹' βₗ' y𝕆_𝕆' y𝔹_𝔹' y𝕆_sub_FV_F wf_F
     have y𝕆_sub_FV' : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ᶠᵇ e;ᶠᵇ F) := by
       intros x x_in
       exact y𝕆_sub_FV (Multiset.mem_toFinset.mpr x_in)
@@ -848,7 +841,6 @@ by
           rw [←Multiset.cons_add]
           rw [←Multiset.map_cons (· ∶ 𝕆)]
           refine ih ?_ nd_y𝔹 (Function.update βₗ y 𝕆) ?_ ?_ ?_ ?_
-          try any_goals assumption
           · cases wf
             simp only [Multiset.nodup_cons]
             rename_i z_undef x_def z_used F_wf
@@ -896,8 +888,13 @@ by
         sorry
     | const_app_full c' ys =>
       simp only [C]
-      simp_all only [Multiset.mem_toFinset, implies_true]
-      sorry
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, β c' y)) ys) : Multiset TypedVar) =
+                   (List.map (fun y => y ∶ β c' y) ys : Multiset TypedVar) := by
+        simp only [List.map_map]
+        rfl
+      rw [h_map]
+      apply Linear.const_app_full
     | const_app_part c' ys =>
       simp only [C]
       have : ∀ y ∈ ys, (y, β c' y) = (y, 𝕆) := by
@@ -905,19 +902,33 @@ by
         | let_const_app_part ys_def no_𝔹_var z_used z_undef F_wf =>
           intros y' y'_in_ys
           have not_𝔹 := no_𝔹_var y'
-          rw [not_𝔹_iff_𝕆] at not_𝔹
-          rw [not_𝔹 ]
-      rw [List.map_congr_left this]
-      simp_all only [Multiset.mem_toFinset, implies_true, Prod.mk.injEq, true_and]
-      sorry
+          cases h : β c' y'
+          · rfl
+          · contradiction
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, β c' y)) ys) : Multiset TypedVar) =
+                   (List.map (fun y => y ∶ 𝕆) ys : Multiset TypedVar) := by
+        rw [List.map_congr_left this]
+        simp only [List.map_map]
+        rfl
+      rw [h_map]
+      apply Linear.const_app_part
     | var_app x z =>
       simp only [C]
-      simp_all only [Multiset.mem_toFinset, implies_true]
-      sorry
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) [(x, 𝕆), (z, 𝕆)] : Multiset TypedVar) =
+                   {x ∶ 𝕆, z ∶ 𝕆} := by rfl
+      rw [h_map]
+      apply Linear.var_app
     | ctor i ys =>
       simp only [C]
-      simp_all only [Multiset.mem_toFinset, implies_true]
-      sorry
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, 𝕆)) ys) : Multiset TypedVar) =
+                   (List.map (fun y => y ∶ 𝕆) ys : Multiset TypedVar) := by
+        simp only [List.map_map]
+        rfl
+      rw [h_map]
+      apply Linear.ctor_app
   case «case» x Fs ih  =>
     unfold C
     have FV_sub_y𝕆_y𝔹 : (fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).val ⊆ y𝕆 + y𝔹 := by
@@ -940,13 +951,31 @@ by
       obtain ⟨w, h_1⟩ := a
       obtain ⟨left, right⟩ := h_1
       subst right
-      sorry
+      grind =>
+        instantiate only [#7931, #a505]
+        instantiate only [= Finset.subset_iff]
+        cases #a1bf
+        · cases #26ca
+          · sorry
+          · cases #27b2
+            · instantiate only [#3c6c]
+            · instantiate only [#6db3]
+        · sorry
     · intro F a
       simp_all only [Multiset.mem_toFinset, List.mem_map]
       obtain ⟨w, h_1⟩ := a
       obtain ⟨left, right⟩ := h_1
       subst right
-      sorry
+      grind =>
+        instantiate only [#7931, #a505]
+        instantiate only [= Finset.subset_iff]
+        cases #a1bf
+        · cases #26ca
+          · sorry
+          · cases #27b2
+            · instantiate only [#3c6c]
+            · instantiate only [#6db3]
+        · sorry
   case «inc» x F ih  =>
     cases wf
   case «dec» x F ih  =>
