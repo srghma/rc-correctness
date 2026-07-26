@@ -803,20 +803,13 @@ by
       apply inductive_weakening
       apply Linear.ret
   case let_ y e F ih  =>
-    have ih_C : ∀ (βₗ' : Var → LinType),
-      Multiset.Nodup y𝕆 →
-      Multiset.Nodup y𝔹 →
-      (∀ (y : Var), y ∈ y𝕆 → βₗ' y = 𝕆) →
-      (∀ (y : Var), y ∈ y𝔹 → βₗ' y = 𝔹) →
-      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
-      (∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body F) →
-      (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C β F βₗ') ∷ 𝕆) := by
-        intros βₗ' nd_y𝕆' nd_y𝔹' y𝕆_𝕆' y𝔹_𝔹' wf_F y𝕆_free'
-        have y𝕆_sub_FV_F : y𝕆.toFinset ⊆ fv_of_fn_body F := by
-          rw [Finset.subset_iff]
-          intros x x_in
-          exact y𝕆_free' (Multiset.mem_toFinset.mp x_in)
-        exact ih nd_y𝕆' nd_y𝔹' βₗ' y𝕆_𝕆' y𝔹_𝔹' y𝕆_sub_FV_F wf_F
+    have ih_C : C_app_rc_insertion_correctness_IH β δ F := by
+      intros y𝕆' y𝔹' βₗ' nd_y𝕆' nd_y𝔹' y𝕆_𝕆' y𝔹_𝔹' wf_F y𝕆_free'
+      have y𝕆_sub_FV_F : y𝕆'.toFinset ⊆ fv_of_fn_body F := by
+        rw [Finset.subset_iff]
+        intros x x_in
+        exact y𝕆_free' (Multiset.mem_toFinset.mp x_in)
+      exact ih nd_y𝕆' nd_y𝔹' βₗ' y𝕆_𝕆' y𝔹_𝔹' y𝕆_sub_FV_F wf_F
     have y𝕆_sub_FV' : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ᶠᵇ e;ᶠᵇ F) := by
       intros x x_in
       exact y𝕆_sub_FV (Multiset.mem_toFinset.mpr x_in)
@@ -841,31 +834,42 @@ by
         unfold dec_𝕆_var
         split_ifs with h_1
         · rcases Multiset.exists_cons_of_mem x_in_y𝕆 with ⟨y𝕆', y𝕆_def⟩
-          rw [y𝕆_def] at *
+          rw [y𝕆_def] at nd_y𝕆 y𝕆_𝕆 ⊢
           simp only [Multiset.map_cons, Multiset.cons_add]
           rw [Multiset.cons_swap]
           apply Linear.dec
           rw [←Multiset.cons_add]
           rw [←Multiset.map_cons (· ∶ 𝕆)]
           refine ih ?_ nd_y𝔹 (Function.update βₗ y 𝕆) ?_ ?_ ?_ ?_
-          try any_goals assumption
           · cases wf
-            simp only [Multiset.nodup_cons]
             rename_i z_undef x_def z_used F_wf
+            rw [y𝕆_def] at z_undef
+            simp only [Multiset.nodup_cons]
             simp_all only [Multiset.mem_toFinset, implies_true, true_and, Finset.mem_union, not_or, true_or]
             obtain ⟨left, right⟩ := z_undef
             apply And.intro
             · apply Aesop.BuiltinRules.not_intro
               intro a
-              sorry
-            · sorry
+              exact left (Multiset.mem_cons_of_mem a)
+            · exact (Multiset.nodup_cons.mp nd_y𝕆).2
           · intros z z_in_y𝕆'
-            simp_all only [Multiset.mem_toFinset, implies_true, true_and, Multiset.mem_cons]
+            rw [Multiset.mem_cons] at z_in_y𝕆'
             cases z_in_y𝕆' with
             | inl h =>
               subst h
-              simp_all only [Function.update_self]
-            | inr h_2 => sorry
+              simp only [Function.update_self]
+            | inr h_2 =>
+              cases wf
+              rename_i z_undef x_def z_used F_wf
+              rw [y𝕆_def] at z_undef
+              simp_all only [Finset.mem_union, Multiset.mem_toFinset, not_or]
+              obtain ⟨left, right⟩ := z_undef
+              have h_neq : z ≠ y := by
+                intro h_eq
+                rw [h_eq] at h_2
+                exact left (Multiset.mem_cons_of_mem h_2)
+              rw [Function.update_of_ne h_neq]
+              exact y𝕆_𝕆 z (Multiset.mem_cons_of_mem h_2)
           · intros z z_in_y𝔹
             by_cases z = y
             · cases wf
@@ -873,6 +877,7 @@ by
             · grind only [= Function.update.eq_1, #3c6c]
           · cases wf
             rename_i z_undef x_def z_used F_wf
+            rw [y𝕆_def] at z_undef F_wf
             intro x_1 a
             simp_all only [Multiset.mem_toFinset, implies_true, true_and, Finset.mem_union, not_or, true_or,
               Multiset.toFinset_cons, Finset.mem_insert]
@@ -881,23 +886,179 @@ by
             | inl h =>
               subst h
               simp_all only
-            | inr h_2 => sorry
+            | inr h_2 =>
+              have h_fv := y𝕆_sub_FV (Or.inr h_2)
+              simp only [fv_of_fn_body, fv_of_expr, Finset.mem_union, Finset.mem_singleton, Finset.mem_erase] at h_fv
+              cases h_fv with
+              | inl h_eq =>
+                subst h_eq
+                have h_not : x_1 ∉ y𝕆' := (Multiset.nodup_cons.mp nd_y𝕆).1
+                contradiction
+              | inr h_erase =>
+                exact h_erase.2
           · cases wf
             simp only [fv_of_fn_body, fv_of_expr, Finset.mem_union,
               Finset.mem_singleton, Finset.mem_erase] at y𝕆_sub_FV
-            rename_i z_undef x_def z_used F_wf
-            simp_all only [Multiset.mem_toFinset, implies_true, true_and, Finset.mem_union, not_or, true_or,
-              ne_eq, Multiset.toFinset_cons, Finset.insert_union]
-            obtain ⟨left, right⟩ := z_undef
-            sorry
-        · simp_all only [Multiset.mem_toFinset, implies_true, true_and, Decidable.not_not]
-          sorry
-      · simp_all only [Multiset.mem_toFinset, implies_true]
-        sorry
+            rename_i v z_undef z_used F_wf
+            rw [y𝕆_def] at z_undef F_wf
+            simp_all only [Multiset.mem_toFinset, implies_true, true_and, ne_eq, Multiset.toFinset_cons, Finset.insert_union]
+            have left_not_x : y ≠ x := by
+              intro h_eq
+              subst h_eq
+              exact v (Finset.mem_insert_self y (y𝕆'.toFinset ∪ y𝔹.toFinset))
+            have right_not_y𝕆' : y ∉ y𝕆'.toFinset ∪ y𝔹.toFinset := by
+              intro h_mem
+              exact v (Finset.mem_insert_of_mem h_mem)
+            have h_high : insert y (y𝕆'.toFinset ∪ y𝔹.toFinset) ⊆ insert y (insert x (y𝕆'.toFinset ∪ y𝔹.toFinset)) := by
+              intro u hu
+              simp only [Finset.mem_insert, Finset.mem_union] at hu ⊢
+              rcases hu with rfl | hu | hu
+              · exact Or.inl rfl
+              · exact Or.inr (Or.inr (Or.inl hu))
+              · exact Or.inr (Or.inr (Or.inr hu))
+            have h_low : fv_of_fn_body F ⊆ insert y (y𝕆'.toFinset ∪ y𝔹.toFinset) := by
+              intro u hu
+              have hu_sub := FV_sub_wf_context F_wf hu
+              simp only [Finset.mem_insert, Finset.mem_union] at hu_sub ⊢
+              rcases hu_sub with rfl | rfl | hu_sub | hu_sub
+              · exact Or.inl rfl
+              · have h_C : u ∉ fv_of_fn_body (C β F (Function.update βₗ y 𝕆)) := h_1
+                rw [FV_C_eq_FV] at h_C
+                contradiction
+              · exact Or.inr (Or.inl hu_sub)
+              · exact Or.inr (Or.inr hu_sub)
+            exact wf_FV_sandwich h_low h_high F_wf
+        · cases wf
+          rename_i y_undef x_def y_used F_wf
+          have h_eq : (y ∶ 𝕆) ::ₘ ((y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹)) = ((y ::ₘ y𝕆) {∶} 𝕆) + (y𝔹 {∶} 𝔹) := by
+            simp only [Multiset.map_cons, Multiset.cons_add]
+          rw [h_eq]
+          refine ih ?_ nd_y𝔹 (Function.update βₗ y 𝕆) ?_ ?_ ?_ ?_
+          · rw [Multiset.nodup_cons]
+            apply And.intro
+            · intro y_in_y𝕆
+              have h_mem : y ∈ y𝕆.toFinset ∪ y𝔹.toFinset := by
+                simp only [Finset.mem_union, Multiset.mem_toFinset]
+                exact Or.inl y_in_y𝕆
+              exact y_undef h_mem
+            · exact nd_y𝕆
+          · intros z_1 z_in_y𝕆'
+            rw [Multiset.mem_cons] at z_in_y𝕆'
+            cases z_in_y𝕆' with
+            | inl h_eq =>
+              subst h_eq
+              simp only [Function.update_self]
+            | inr h_2 =>
+              have h_neq : z_1 ≠ y := by
+                intro h_eq
+                rw [h_eq] at h_2
+                have h_mem : y ∈ y𝕆.toFinset ∪ y𝔹.toFinset := by
+                  simp only [Finset.mem_union, Multiset.mem_toFinset]
+                  exact Or.inl h_2
+                exact y_undef h_mem
+              rw [Function.update_of_ne h_neq]
+              exact y𝕆_𝕆 z_1 h_2
+          · intros z_1 z_in_y𝔹
+            by_cases h_eq : z_1 = y
+            · rw [h_eq] at z_in_y𝔹
+              have h_mem : y ∈ y𝕆.toFinset ∪ y𝔹.toFinset := by
+                simp only [Finset.mem_union, Multiset.mem_toFinset]
+                exact Or.inr z_in_y𝔹
+              exact False.elim (y_undef h_mem)
+            · rw [Function.update_of_ne h_eq]
+              exact y𝔹_𝔹 z_1 z_in_y𝔹
+          · intro v_in a
+            rw [Multiset.toFinset_cons, Finset.mem_insert] at a
+            cases a with
+            | inl h_eq =>
+              subst h_eq
+              exact y_used
+            | inr h_2 =>
+              have h_fv := y𝕆_sub_FV h_2
+              simp only [fv_of_fn_body, fv_of_expr, Finset.mem_union, Finset.mem_singleton, Finset.mem_erase] at h_fv
+              rcases h_fv with h_eq | h_erase
+              · subst h_eq
+                have h_eq_𝕆 : βₗ v_in = 𝕆 := y𝕆_𝕆 v_in (Multiset.mem_toFinset.mp h_2)
+                have h_not : v_in ∈ fv_of_fn_body F := by
+                  by_contra h_not_in
+                  have h_C : v_in ∉ fv_of_fn_body (C β F (Function.update βₗ y 𝕆)) := by
+                    rw [FV_C_eq_FV]
+                    exact h_not_in
+                  exact h_1 ⟨h_eq_𝕆, h_C⟩
+                exact h_not
+              · exact h_erase.2
+          · have h_wf_eq : insert y (y𝕆.toFinset ∪ y𝔹.toFinset) = (y ::ₘ y𝕆).toFinset ∪ y𝔹.toFinset := by
+              simp only [Multiset.toFinset_cons, Finset.insert_union]
+            rw [←h_wf_eq]
+            exact F_wf
+      · cases wf
+        rename_i y_undef x_def y_used F_wf
+        apply Linear.proj_𝔹
+        · simp only [Finset.mem_union, Multiset.mem_toFinset] at x_def
+          cases x_def with
+          | inl h_in =>
+            have : βₗ x = 𝕆 := y𝕆_𝕆 x h_in
+            contradiction
+          | inr h_in =>
+            simp only [Multiset.mem_add]
+            apply Or.inr
+            rw [Multiset.mem_map]
+            exact ⟨x, h_in, rfl⟩
+        have h_eq : (y ∶ 𝔹) ::ₘ ((y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹)) = (y𝕆 {∶} 𝕆) + ((y ::ₘ y𝔹) {∶} 𝔹) := by
+          simp only [Multiset.map_cons, Multiset.add_comm, Multiset.cons_add]
+        rw [h_eq]
+        refine ih nd_y𝕆 ?_ (Function.update βₗ y 𝔹) ?_ ?_ ?_ ?_
+        · rw [Multiset.nodup_cons]
+          apply And.intro
+          · intro y_in_y𝔹
+            have h_mem : y ∈ y𝕆.toFinset ∪ y𝔹.toFinset := by
+              simp only [Finset.mem_union, Multiset.mem_toFinset]
+              exact Or.inr y_in_y𝔹
+            exact y_undef h_mem
+          · exact nd_y𝔹
+        · intros z_1 z_in_y𝕆
+          have h_neq : z_1 ≠ y := by
+            intro h_eq
+            rw [h_eq] at z_in_y𝕆
+            have h_mem : y ∈ y𝕆.toFinset ∪ y𝔹.toFinset := by
+              simp only [Finset.mem_union, Multiset.mem_toFinset]
+              exact Or.inl z_in_y𝕆
+            exact y_undef h_mem
+          rw [Function.update_of_ne h_neq]
+          exact y𝕆_𝕆 z_1 z_in_y𝕆
+        · intros z_1 z_in_y𝔹'
+          by_cases h_eq : z_1 = y
+          · subst h_eq
+            simp only [Function.update_self]
+          · rw [Function.update_of_ne h_eq]
+            rw [Multiset.mem_cons] at z_in_y𝔹'
+            cases z_in_y𝔹' with
+            | inl h_self => contradiction
+            | inr h_mem => exact y𝔹_𝔹 z_1 h_mem
+        · intro v_in a
+          have h_in_toFinset : v_in ∈ y𝕆.toFinset := a
+          have h_fv := y𝕆_sub_FV h_in_toFinset
+          simp only [fv_of_fn_body, fv_of_expr, Finset.mem_union, Finset.mem_singleton, Finset.mem_erase] at h_fv
+          cases h_fv with
+          | inl h_eq =>
+            subst h_eq
+            have : βₗ v_in = 𝕆 := y𝕆_𝕆 v_in (Multiset.mem_toFinset.mp a)
+            contradiction
+          | inr h_erase =>
+            exact h_erase.2
+        · have h_wf_eq : insert y (y𝕆.toFinset ∪ y𝔹.toFinset) = y𝕆.toFinset ∪ (y ::ₘ y𝔹).toFinset := by
+            simp only [Multiset.toFinset_cons, Finset.union_insert]
+          rw [←h_wf_eq]
+          exact F_wf
     | const_app_full c' ys =>
       simp only [C]
-      simp_all only [Multiset.mem_toFinset, implies_true]
-      sorry
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, β c' y)) ys) : Multiset TypedVar) =
+                   (List.map (fun y => y ∶ β c' y) ys : Multiset TypedVar) := by
+        simp only [List.map_map]
+        rfl
+      rw [h_map]
+      apply Linear.const_app_full
     | const_app_part c' ys =>
       simp only [C]
       have : ∀ y ∈ ys, (y, β c' y) = (y, 𝕆) := by
@@ -905,19 +1066,33 @@ by
         | let_const_app_part ys_def no_𝔹_var z_used z_undef F_wf =>
           intros y' y'_in_ys
           have not_𝔹 := no_𝔹_var y'
-          rw [not_𝔹_iff_𝕆] at not_𝔹
-          rw [not_𝔹 ]
-      rw [List.map_congr_left this]
-      simp_all only [Multiset.mem_toFinset, implies_true, Prod.mk.injEq, true_and]
-      sorry
+          cases h : β c' y'
+          · rfl
+          · contradiction
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, β c' y)) ys) : Multiset TypedVar) =
+                   (List.map (fun y => y ∶ 𝕆) ys : Multiset TypedVar) := by
+        rw [List.map_congr_left this]
+        simp only [List.map_map]
+        rfl
+      rw [h_map]
+      apply Linear.const_app_part
     | var_app x z =>
       simp only [C]
-      simp_all only [Multiset.mem_toFinset, implies_true]
-      sorry
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) [(x, 𝕆), (z, 𝕆)] : Multiset TypedVar) =
+                   {x ∶ 𝕆, z ∶ 𝕆} := by rfl
+      rw [h_map]
+      apply Linear.var_app
     | ctor i ys =>
       simp only [C]
-      simp_all only [Multiset.mem_toFinset, implies_true]
-      sorry
+      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
+      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, 𝕆)) ys) : Multiset TypedVar) =
+                   (List.map (fun y => y ∶ 𝕆) ys : Multiset TypedVar) := by
+        simp only [List.map_map]
+        rfl
+      rw [h_map]
+      apply Linear.ctor_app
   case «case» x Fs ih  =>
     unfold C
     have FV_sub_y𝕆_y𝔹 : (fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).val ⊆ y𝕆 + y𝔹 := by
@@ -927,7 +1102,7 @@ by
       simp only [Finset.mem_union, Multiset.mem_toFinset] at h_in_union
       simp only [Multiset.mem_add]
       exact h_in_union
-    cases wf with | case wf_x_def _ =>
+    cases wf with | case wf_x_def Fs_wf =>
     simp only [Finset.mem_union, Multiset.mem_toFinset] at wf_x_def
     cases wf_x_def
     apply Linear.case_𝕆
@@ -940,13 +1115,93 @@ by
       obtain ⟨w, h_1⟩ := a
       obtain ⟨left, right⟩ := h_1
       subst right
-      sorry
+      have h_sub : y𝕆 ⊆ ↑((fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).sort LE.le) := by
+        intro z z_in
+        rw [Multiset.mem_coe, Finset.mem_sort]
+        exact y𝕆_sub_FV z_in
+      have h_sub_vars : ↑((fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).sort LE.le) ⊆ y𝕆 + y𝔹 := by
+        intro z z_in
+        rw [Multiset.mem_coe, Finset.mem_sort] at z_in
+        exact FV_sub_y𝕆_y𝔹 z_in
+      have h_nodup : List.Nodup ((fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).sort LE.le) := Finset.sort_nodup _ _
+      apply inductive_dec h_sub h_sub_vars h_nodup y𝕆_𝕆 y𝔹_𝔹 nd_y𝕆 nd_y𝔹
+      let y𝕆' := Multiset.filter (fun y => y ∈ fv_of_fn_body (C β w βₗ)) y𝕆
+      have nd_y𝕆' : y𝕆'.Nodup := Multiset.Nodup.filter _ nd_y𝕆
+      have y𝕆'_𝕆 : ∀ y ∈ y𝕆', βₗ y = 𝕆 := by
+        intros y hy
+        exact y𝕆_𝕆 y (Multiset.mem_of_mem_filter hy)
+      have y𝕆'_sub : y𝕆'.toFinset ⊆ fv_of_fn_body w := by
+        intro z z_in
+        rw [Multiset.mem_toFinset, Multiset.mem_filter] at z_in
+        rw [FV_C_eq_FV] at z_in
+        exact z_in.2
+      have h_wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆'.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ w := by
+        have h_low : fv_of_fn_body w ⊆ y𝕆'.toFinset ∪ y𝔹.toFinset := by
+          intro z z_in
+          have h_mem := FV_sub_wf_context (Fs_wf w left) z_in
+          simp only [Finset.mem_union] at h_mem ⊢
+          rcases h_mem with h_mem | h_mem
+          · apply Or.inl
+            rw [Multiset.mem_toFinset, Multiset.mem_filter, ←Multiset.mem_toFinset]
+            exact ⟨h_mem, by rw [FV_C_eq_FV]; exact z_in⟩
+          · exact Or.inr h_mem
+        have h_high : y𝕆'.toFinset ∪ y𝔹.toFinset ⊆ y𝕆.toFinset ∪ y𝔹.toFinset := by
+          intro z z_in
+          simp only [Finset.mem_union] at z_in ⊢
+          rcases z_in with z_in | h_mem
+          · apply Or.inl
+            rw [Multiset.mem_toFinset, Multiset.mem_filter] at z_in
+            rw [Multiset.mem_toFinset]
+            exact z_in.1
+          · exact Or.inr h_mem
+        exact wf_FV_sandwich h_low h_high (Fs_wf w left)
+      exact ih w left y𝕆' y𝔹 βₗ nd_y𝕆' nd_y𝔹 y𝕆'_𝕆 y𝔹_𝔹 y𝕆'_sub h_wf
     · intro F a
       simp_all only [Multiset.mem_toFinset, List.mem_map]
       obtain ⟨w, h_1⟩ := a
       obtain ⟨left, right⟩ := h_1
       subst right
-      sorry
+      have h_sub : y𝕆 ⊆ ↑((fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).sort LE.le) := by
+        intro z z_in
+        rw [Multiset.mem_coe, Finset.mem_sort]
+        exact y𝕆_sub_FV z_in
+      have h_sub_vars : ↑((fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).sort LE.le) ⊆ y𝕆 + y𝔹 := by
+        intro z z_in
+        rw [Multiset.mem_coe, Finset.mem_sort] at z_in
+        exact FV_sub_y𝕆_y𝔹 z_in
+      have h_nodup : List.Nodup ((fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).sort LE.le) := Finset.sort_nodup _ _
+      apply inductive_dec h_sub h_sub_vars h_nodup y𝕆_𝕆 y𝔹_𝔹 nd_y𝕆 nd_y𝔹
+      let y𝕆' := Multiset.filter (fun y => y ∈ fv_of_fn_body (C β w βₗ)) y𝕆
+      have nd_y𝕆' : y𝕆'.Nodup := Multiset.Nodup.filter _ nd_y𝕆
+      have y𝕆'_𝕆 : ∀ y ∈ y𝕆', βₗ y = 𝕆 := by
+        intros y hy
+        exact y𝕆_𝕆 y (Multiset.mem_of_mem_filter hy)
+      have y𝕆'_sub : y𝕆'.toFinset ⊆ fv_of_fn_body w := by
+        intro z z_in
+        rw [Multiset.mem_toFinset, Multiset.mem_filter] at z_in
+        rw [FV_C_eq_FV] at z_in
+        exact z_in.2
+      have h_wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆'.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ w := by
+        have h_low : fv_of_fn_body w ⊆ y𝕆'.toFinset ∪ y𝔹.toFinset := by
+          intro z z_in
+          have h_mem := FV_sub_wf_context (Fs_wf w left) z_in
+          simp only [Finset.mem_union] at h_mem ⊢
+          rcases h_mem with h_mem | h_mem
+          · apply Or.inl
+            rw [Multiset.mem_toFinset, Multiset.mem_filter, ←Multiset.mem_toFinset]
+            exact ⟨h_mem, by rw [FV_C_eq_FV]; exact z_in⟩
+          · exact Or.inr h_mem
+        have h_high : y𝕆'.toFinset ∪ y𝔹.toFinset ⊆ y𝕆.toFinset ∪ y𝔹.toFinset := by
+          intro z z_in
+          simp only [Finset.mem_union] at z_in ⊢
+          rcases z_in with z_in | h_mem
+          · apply Or.inl
+            rw [Multiset.mem_toFinset, Multiset.mem_filter] at z_in
+            rw [Multiset.mem_toFinset]
+            exact z_in.1
+          · exact Or.inr h_mem
+        exact wf_FV_sandwich h_low h_high (Fs_wf w left)
+      exact ih w left y𝕆' y𝔹 βₗ nd_y𝕆' nd_y𝔹 y𝕆'_𝕆 y𝔹_𝔹 y𝕆'_sub h_wf
   case «inc» x F ih  =>
     cases wf
   case «dec» x F ih  =>
