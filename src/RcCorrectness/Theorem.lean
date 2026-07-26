@@ -1,3 +1,5 @@
+import Mathlib.Data.Multiset.MapFold
+import Mathlib.Data.Multiset.AddSub
 import RcCorrectness.Compiler
 import RcCorrectness.WellFormedness
 import Aesop
@@ -645,503 +647,459 @@ lemma inductive_weakening {β : Const → Var → LinType} {ys : Multiset TypedV
   (h : β; ys ⊩ r ∷ τ)
   : β; ys + (y𝔹 {∶} 𝔹) ⊩ r ∷ τ :=
 by
-  apply Multiset.induction_on y𝔹
-  { simp only [map_zero, add_zero]
-    assumption }
-  intros a s ih
-  simp only [map_cons, add_cons]
-  apply linear.weaken
-  assumption
+  refine Multiset.induction_on y𝔹 ?_ ?_
+  · simp only [Multiset.map_zero, add_zero]
+    assumption
+  · intros a s ih
+    simp only [Multiset.map_cons, Multiset.add_cons]
+    apply Linear.weaken a
+    assumption
+
+theorem C_app_typing_correct {β : Const → Var → LinType} {βₗ : Var → LinType}
+  {Γ : List (Var × LinType)} {F' : FnBody} {Δ : Multiset TypedVar}
+  (ty : β ; ↑((Γ.filter (fun yτ => βₗ yτ.1 = 𝕆)).map (fun yτ => yτ.1 ∶ 𝕆)) + Δ ⊩ F' ∷ 𝕆)
+  (h_subset : ↑((Γ.filter (fun yτ => βₗ yτ.1 = 𝕆)).map (fun yτ => yτ.1 ∶ 𝕆)) ⊆ Δ)
+  : β ; Δ ⊩ C_app Γ F' βₗ ∷ 𝕆 := by
+  induction Γ generalizing Δ F' with
+  | nil =>
+    simp_all only [List.filter_nil, List.map_nil, Multiset.coe_nil, Multiset.zero_add, Multiset.zero_subset]
+    sorry
+  | cons yτ xs ih =>
+    unfold C_app
+    obtain ⟨fst, snd⟩ := yτ
+    split
+    next x x_1 x_2 x_3 z e F heq => simp_all only [reduceCtorEq]
+    next x x_1 x_2 x_3 y t xs_1 z e F
+      heq =>
+      simp_all only [List.cons.injEq, Prod.mk.injEq]
+      obtain ⟨left, right⟩ := heq
+      obtain ⟨left, right_1⟩ := left
+      subst right left right_1
+      split
+      next h =>
+        subst h
+        sorry
+      next h => sorry
+    next x x_1 x_2 x_3 x_4 x_5
+      x_6 =>
+      simp_all only [reduceCtorEq, implies_true, List.cons.injEq, Prod.mk.injEq, imp_false, and_imp]
+      sorry
+
+notation f "[" a " ↦ " b "]" => Function.update f a b
+
+abbrev C_app_rc_insertion_correctness_IH (β : Const → Var → LinType) (δ : Program) (F : FnBody) : Prop :=
+  ∀ {y𝕆' y𝔹' : Multiset Var} (βₗ' : Var → LinType),
+    Multiset.Nodup y𝕆' →
+    Multiset.Nodup y𝔹' →
+    (∀ (y : Var), y ∈ y𝕆' → βₗ' y = 𝕆) →
+    (∀ (y : Var), y ∈ y𝔹' → βₗ' y = 𝔹) →
+    (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆'.toFinset ∪ y𝔹'.toFinset ⊢ʷᶠᵇ F) →
+    (∀ ⦃x : Var⦄, x ∈ y𝕆' → x ∈ fv_of_fn_body F) →
+    (β; (y𝕆' {∶} 𝕆) + (y𝔹' {∶} 𝔹) ⊩ ↑(C β F βₗ') ∷ 𝕆)
 
 theorem C_app_rc_insertion_correctness {β : Const → Var → LinType} {βₗ : Var → LinType} {δ : Program}
   {y : Var} {e : Expr} {F : FnBody} {y𝕆 y𝔹 : Multiset Var} {Γ : List (Var × LinType)}
-  (ih : ∀ (βₗ : Var → LinType),
-    Multiset.Nodup y𝕆 →
-    Multiset.Nodup y𝔹 →
-    (∀ (y : Var), y ∈ y𝕆 → βₗ y = 𝕆) →
-    (∀ (y : Var), y ∈ y𝔹 → βₗ y = 𝔹) →
-    (β; δ; y𝕆.toFinset ∪ y𝔹.toFinset ⊢ F) →
-    (∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body F) →
-    (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C β F βₗ) ∷ 𝕆))
+  (ih : C_app_rc_insertion_correctness_IH β δ F)
   (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
   (y𝕆_𝕆 : ∀ (y : Var), y ∈ y𝕆 → βₗ y = 𝕆)
   (y𝔹_𝔹 : ∀ (y : Var), y ∈ y𝔹 → βₗ y = 𝔹)
-  (wf : β; δ; y𝕆.toFinset ∪ y𝔹.toFinset ⊢ (y ≔ e; F))
-  (y𝕆_free : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ e; F))
-  (ty : β; (Γ.map (λ (yτ : Var × LinType), yτ.1 ∶ yτ.2)) ⊩ e ∷ 𝕆)
-  : (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C_app Γ (y ≔ e; C β F (βₗ[y↦𝕆])) βₗ) ∷ 𝕆) :=
+  (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (y ≔ᶠᵇ e;ᶠᵇ F))
+  (y𝕆_free : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ᶠᵇ e;ᶠᵇ F))
+  (ty : β; (Γ.map (fun (yτ : Var × LinType) => yτ.1 ∶ yτ.2)) ⊩ e ∷ 𝕆)
+  : (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C_app Γ (y ≔ᶠᵇ e;ᶠᵇ C β F (βₗ[y↦𝕆])) βₗ) ∷ 𝕆) :=
 by
-  sorry
-
-
+  induction Γ generalizing y𝕆 y𝔹 βₗ with
+  | nil =>
+    simp_all only [List.map_nil, Multiset.coe_nil]
+    sorry
+  | cons yτ xs ih_Γ =>
+    unfold C_app
+    split_ifs with ht
+    · unfold inc_𝕆_var
+      split_ifs with hinc
+      · simp_all only [List.map_cons, Finset.mem_union, List.mem_toFinset, List.mem_map, Prod.exists, exists_and_right,
+          exists_eq_right, not_or, not_exists, implies_true]
+        obtain ⟨fst, snd⟩ := yτ
+        obtain ⟨left, right⟩ := hinc
+        obtain ⟨left_1, right⟩ := right
+        subst ht
+        simp_all only [implies_true]
+        sorry
+      · simp_all only [List.map_cons, Finset.mem_union, List.mem_toFinset, List.mem_map, Prod.exists, exists_and_right,
+          exists_eq_right, not_or, not_exists, not_and, Decidable.not_not]
+        obtain ⟨fst, snd⟩ := yτ
+        subst ht
+        simp_all only
+        sorry
+    · simp_all only [List.map_cons]
+      obtain ⟨fst, snd⟩ := yτ
+      simp_all only
+      sorry
 
 theorem rc_insertion_correctness' {β : Const → Var → LinType} {δ : Program} {c : Const}
-  {y𝕆 y𝔹 : multiset Var}
-  (nd_y𝕆 : Nodup y𝕆) (nd_y𝔹 : Nodup y𝔹)
+  {y𝕆 y𝔹 : Multiset Var}
+  (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
   (y𝕆_𝕆 : ∀ y ∈ y𝕆, β c y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, β c y = 𝔹)
-  (y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (δ c).F) (wf : β; δ; y𝕆.toFinset ∪ y𝔹.toFinset ⊢ (δ c).F)
-  : β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β ((δ c).F) (β c) ∷ 𝕆 :=
+  (y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (δ c).fn_body) (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (δ c).fn_body)
+  : β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β ((δ c).fn_body) (β c) ∷ 𝕆 :=
 by
-  generalize h : β c = βₗ
-  rw [h at *]
-  clear h
-  simp only [Finset.subset_iff, List.mem_toFinset] at y𝕆_sub_FV
-  generalize h : (δ c).F = F
-  rw [h at *]
-  clear h
-  induction F using FnBody.rec_wf generalizing y𝕆 y𝔹 βₗ
+  generalize h_β : β c = βₗ at y𝕆_𝕆 y𝔹_𝔹 ⊢
+  clear h_β
+  simp only [Finset.subset_iff] at y𝕆_sub_FV
+  generalize h_F : (δ c).fn_body = F at y𝕆_sub_FV wf ⊢
+  clear h_F
+  induction F using FnBody.rec (motive_2 := fun Fs => ∀ F ∈ Fs, ∀ (y𝕆 y𝔹 : Multiset Var) (βₗ : Var → LinType),
+    Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 →
+    (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+    (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+    (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+    β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆) generalizing y𝕆 y𝔹 βₗ
   case ret x  =>
     unfold C
     unfold fv_of_fn_body at y𝕆_sub_FV
-    cases wf
-    simp only [mem_union, ndunion_eq_union, to_finset_val, nodup_erase_dup, mem_erase_dup, Finset.mem_mk] at wf_x_def
+    cases wf with | ret wf_x_def =>
+    simp only [Finset.mem_union, Multiset.mem_toFinset] at wf_x_def
     unfold inc_𝕆_var
-    cases wf_x_def
-    { have : βₗ x = 𝕆 ∧ x ∉ Finset.empty, from ⟨y𝕆_𝕆 x wf_x_def, Finset.not_mem_empty x⟩
+    cases wf_x_def with
+    | inl wf_x_def =>
+      have : βₗ x = 𝕆 ∧ x ∉ (∅ : Finset Var) := ⟨y𝕆_𝕆 x wf_x_def, Finset.notMem_empty x⟩
       rw [if_pos this]
-      have : y𝕆 = x :: 0
-      { rw [nodup_ext nd_y𝕆 (nodup_singleton x)]
+      have : y𝕆 = x ::ₘ 0 := by
+        apply (nd_y𝕆.ext (Multiset.nodup_singleton x)).mpr
         intro a
-        split
-        intro h
-        { exact y𝕆_sub_FV h }
-        { rw [mem_singleton] at h
-          rwa h } }
+        simp only [Multiset.mem_singleton]
+        constructor
+        · intro h
+          exact Finset.mem_singleton.mp (y𝕆_sub_FV (Multiset.mem_toFinset.mpr h))
+        · intro h
+          rwa [h]
       rw [this]
-      simp only [Finset.singleton_val, Finset.insert_empty, zero_add, map_cons, cons_add, map_zero]
-      rw [←singleton_add]
+      simp only [zero_add, Multiset.map_cons, Multiset.cons_add, Multiset.map_zero]
+      rw [← Multiset.singleton_add]
       apply inductive_weakening
-      apply linear.ret }
-    { have : ¬(βₗ x = 𝕆 ∧ x ∉ Finset.empty)
-      { simp only [not_and]
+      apply Linear.ret
+    | inr wf_x_def =>
+      have : ¬(βₗ x = 𝕆 ∧ x ∉ (∅ : Finset Var)) := by
+        simp only [not_and, not_not]
         intro h
         rw [y𝔹_𝔹 x wf_x_def] at h
-        simp only [] at h
-        contradiction }
+        contradiction
       rw [if_neg this]
-      apply linear.inc_𝔹
-      { apply mem_add.mpr
+      apply Linear.inc_𝔹
+      · apply Multiset.mem_add.mpr
         apply Or.inr
-        exact mem_map_of_mem _ wf_x_def }
-      have : y𝕆 = ∅
-      { apply eq_zero_of_forall_not_mem
-        simp only [Finset.insert_empty, Finset.mem_singleton] at y𝕆_sub_FV
+        exact Multiset.mem_map_of_mem _ wf_x_def
+      have : y𝕆 = 0 := by
+        apply Multiset.eq_zero_of_forall_notMem
         intros y y_in_y𝕆
-        have x_in_y𝕆, from (y𝕆_sub_FV y_in_y𝕆).subst y_in_y𝕆
-        have dj : multiset.disjoint y𝕆 y𝔹
-        { rw [disjoint_iff_ne]
-          intros a a_in_y𝕆 b b_in_y𝔹 h
-          rw [h at a_in_y𝕆]
-          let := y𝕆_𝕆 b a_in_y𝕆
-          rw [y𝔹_𝔹 b b_in_y𝔹] at this
-          contradiction }
-        let := disjoint_right.mp dj wf_x_def
-        contradiction }
-      simp only [this, empty_eq_zero, zero_add, map_zero]
-      rw [←singleton_add]
+        have y_eq_x := Finset.mem_singleton.mp (y𝕆_sub_FV (Multiset.mem_toFinset.mpr y_in_y𝕆))
+        have x_in_y𝕆 := y_eq_x ▸ y_in_y𝕆
+        have h_𝕆 := y𝕆_𝕆 x x_in_y𝕆
+        have h_𝔹 := y𝔹_𝔹 x wf_x_def
+        rw [h_𝔹] at h_𝕆
+        contradiction
+      simp only [this, zero_add, Multiset.map_zero]
+      rw [← Multiset.singleton_add]
       apply inductive_weakening
-      apply linear.ret }
-  case «let» y e F ih  =>
-    with_cases { cases e }
-    case RcCorrectness.Expr.proj : i x wf {
+      apply Linear.ret
+  case let_ y e F ih  =>
+    have ih_C : ∀ (βₗ' : Var → LinType),
+      Multiset.Nodup y𝕆 →
+      Multiset.Nodup y𝔹 →
+      (∀ (y : Var), y ∈ y𝕆 → βₗ' y = 𝕆) →
+      (∀ (y : Var), y ∈ y𝔹 → βₗ' y = 𝔹) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      (∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body F) →
+      (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C β F βₗ') ∷ 𝕆) := by
+        intros βₗ' nd_y𝕆' nd_y𝔹' y𝕆_𝕆' y𝔹_𝔹' wf_F y𝕆_free'
+        have y𝕆_sub_FV_F : y𝕆.toFinset ⊆ fv_of_fn_body F := by
+          rw [Finset.subset_iff]
+          intros x x_in
+          exact y𝕆_free' (Multiset.mem_toFinset.mp x_in)
+        exact ih nd_y𝕆' nd_y𝔹' βₗ' y𝕆_𝕆' y𝔹_𝔹' y𝕆_sub_FV_F wf_F
+    have y𝕆_sub_FV' : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ᶠᵇ e;ᶠᵇ F) := by
+      intros x x_in
+      exact y𝕆_sub_FV (Multiset.mem_toFinset.mpr x_in)
+    cases e with
+    | proj i x =>
       unfold C
-      split_ifs
-      { have x_in_y𝕆 : x ∈ y𝕆
-        { let := subset_iff.mp (FV_sub_wf_context wf)
-        simp only [fv_of_fn_body, fv_of_expr, mem_union, Finset.singleton_val, to_finset_val,
-            Finset.insert_empty, mem_erase_dup, Finset.erase_val,
-            Finset.union_val, mem_singleton] at this
-          have h : x ∈ y𝕆 ∨ x ∈ y𝔹, from this (Or.inl rfl)
-          cases h
-          { assumption }
-          { rw [y𝔹_𝔹 x h_1] at h
-            contradiction } }
-        apply linear.proj_𝕆
-        { simpa }
+      split_ifs with h
+      · have x_in_y𝕆 : x ∈ y𝕆 := by
+          let h_sub := FV_sub_wf_context wf
+          have h_free : x ∈ fv_of_fn_body (y ≔ᶠᵇ x[ᵉi];ᶠᵇ F) := by
+            simp [fv_of_fn_body, fv_of_expr]
+          have h_in_union := h_sub h_free
+          simp only [Finset.mem_union, Multiset.mem_toFinset] at h_in_union
+          cases h_in_union with
+          | inl h_in => exact h_in
+          | inr h_in =>
+            have h_ty := y𝔹_𝔹 x h_in
+            rw [h_ty] at h
+            contradiction
+        apply Linear.proj_𝕆
+        · simpa
         unfold dec_𝕆_var
-        split_ifs
-        { rcases exists_cons_of_mem x_in_y𝕆 with ⟨y𝕆', y𝕆_def⟩
-          rw [y𝕆_def at *]
-          simp only [map_cons, cons_add]
-          rw [cons_swap]
-          apply linear.dec
-          rw [←cons_add]
-          rw [←map_cons (∶ 𝕆)]
-          apply ih
-          any_goals { assumption }
-          { cases wf
-            simp only [not_or_distrib, mem_ndinsert, mem_ndunion, to_finset_val
-              mem_erase_dup, to_finset_cons, Finset.insert_val, Finset.mem_mk] at wf_z_undef
-            simp only [nodup_cons] at ⊢ nd_y𝕆
-            exact ⟨wf_z_undef.left.right, nd_y𝕆.right⟩ }
-          { simp only [mem_cons]
-            intros z z_in_y𝕆'
-            cases z_in_y𝕆'
-            { rw [z_in_y𝕆']
-              rw [function.update_same ]}
-            { by_cases z = y
-              { rw [h, function.update_same] }
-              { rw [function.update_noteq]
-                { exact y𝕆_𝕆 z (mem_cons_of_mem z_in_y𝕆') }
-                { assumption } } } }
-          { intros z z_in_y𝔹
+        split_ifs with h_1
+        · rcases Multiset.exists_cons_of_mem x_in_y𝕆 with ⟨y𝕆', y𝕆_def⟩
+          rw [y𝕆_def] at *
+          simp only [Multiset.map_cons, Multiset.cons_add]
+          rw [Multiset.cons_swap]
+          apply Linear.dec
+          rw [←Multiset.cons_add]
+          rw [←Multiset.map_cons (· ∶ 𝕆)]
+          refine ih ?_ nd_y𝔹 (Function.update βₗ y 𝕆) ?_ ?_ ?_ ?_
+          try any_goals assumption
+          · cases wf
+            simp only [Multiset.nodup_cons]
+            rename_i z_undef x_def z_used F_wf
+            simp_all only [Multiset.mem_toFinset, implies_true, true_and, Finset.mem_union, not_or, true_or]
+            obtain ⟨left, right⟩ := z_undef
+            apply And.intro
+            · apply Aesop.BuiltinRules.not_intro
+              intro a
+              sorry
+            · sorry
+          · intros z z_in_y𝕆'
+            simp_all only [Multiset.mem_toFinset, implies_true, true_and, Multiset.mem_cons]
+            cases z_in_y𝕆' with
+            | inl h =>
+              subst h
+              simp_all only [Function.update_self]
+            | inr h_2 => sorry
+          · intros z z_in_y𝔹
             by_cases z = y
-            { cases wf
-              simp [not_or_distrib] at wf_z_undef
-              rw [h at z_in_y𝔹]
-              exact absurd z_in_y𝔹 wf_z_undef.right }
-            { rw [function.update_noteq]
-              { exact y𝔹_𝔹 z z_in_y𝔹 }
-              { assumption } } }
-          { cases wf
-            apply wf_FV_sandwich _ _ wf_F_wf
-            { let := FV_sub_wf_context wf_F_wf
-              rw [Finset.subset_iff at ⊢ this]
-              simp only [mem_ndinsert, mem_ndunion, to_finset_val, Finset.insert_union, Finset.mem_union
-                Finset.mem_insert, mem_erase_dup, to_finset_cons, Finset.insert_val, Finset.mem_mk, List.mem_toFinset] at ⊢ this
-              intros z z_in_FV
-              have h', from this z_in_FV
-              repeat { cases h' }
-              { exact Or.inl rfl }
-              { rw [FV_C_eq_FV] at h_1
-                exact absurd z_in_FV h_1.right }
-              { exact Or.inr (Or.inl h') }
-              { exact Or.inr (Or.inr h') } }
-            { rw [Finset.subset_iff]
-              simp only [mem_ndinsert, mem_ndunion, to_finset_val, Finset.insert_union, Finset.mem_union, Finset.mem_insert
-                mem_erase_dup, to_finset_cons, Finset.insert_val, Finset.mem_mk, List.mem_toFinset]
-              intros y h'
-              repeat { cases h' }
-              { exact Or.inl rfl }
-              { exact Or.inr (Or.inl (Or.inr h')) }
-              { exact Or.inr (Or.inr h') } } }
-          { cases wf
-            simp only [fv_of_fn_body, fv_of_expr, mem_cons, Finset.insert_empty, Finset.mem_union,
-              Finset.mem_singleton, Finset.mem_erase] at ⊢ y𝕆_sub_FV
-            intros z h'
-            cases h'
-            { rwa [h' ]}
-            have h'', from y𝕆_sub_FV (Or.inr h')
-            cases h''
-            { rw [h'' at h']
-              rw [nodup_cons at nd_y𝕆]
-              exact absurd h' nd_y𝕆.left }
-            { exact h''.right } } }
-        simp only [not_and_distrib, not_not] at h_1
-        rw [←ne.def, not_𝕆_iff_𝔹] at h_1
-        cases h_1
-        { rw [h] at h_1, contradiction }
-        rw [←cons_add]
-        rw [←map_cons (∶ 𝕆)]
-        apply ih
-        any_goals { assumption }
-        { cases wf
-          simp only [nodup_cons]
-          simp only [not_or_distrib, mem_union, ndunion_eq_union, to_finset_val
-            nodup_erase_dup, mem_erase_dup, Finset.mem_mk] at wf_z_undef
-          exact ⟨wf_z_undef.left, nd_y𝕆⟩ }
-        { simp only [mem_cons]
-          intros z h'
-          cases h'
-          { rw [h', rw function.update_same ]}
-          { by_cases eq : y = z
-            { rw [eq, rw function.update_same ]}
-            rw [function.update_noteq]
-            { exact y𝕆_𝕆 z h' }
-            symmetry
-            assumption } }
-        { intros z z_in_y𝔹
-          by_cases z = y
-          { cases wf
-            simp only [not_or_distrib, mem_union, ndunion_eq_union, to_finset_val, nodup_erase_dup
-              mem_erase_dup, Finset.mem_mk] at wf_z_undef
-            rw [h at z_in_y𝔹]
-            exact absurd z_in_y𝔹 wf_z_undef.right }
-          { rw [function.update_noteq]
-            { exact y𝔹_𝔹 z z_in_y𝔹 }
-            { assumption } } }
-        { cases wf
-          apply wf_FV_sandwich _ _ wf_F_wf
-          { let := FV_sub_wf_context wf_F_wf
-            rw [Finset.subset_iff at ⊢ this]
-            simp only [mem_union, ndunion_eq_union, to_finset_val, nodup_erase_dup, Finset.insert_union
-              Finset.mem_union, Finset.mem_insert, mem_erase_dup, to_finset_cons, Finset.mem_mk, List.mem_toFinset] at ⊢ this
-            assumption }
-          { rw [Finset.subset_iff]
-            simp only [multiset.mem_erase_dup, multiset.mem_union, multiset.nodup_erase_dup, imp_self
-              multiset.to_finset_val, multiset.List.mem_toFinset, multiset.to_finset_cons, Finset.insert_union
-              Finset.mem_union, Finset.mem_insert, Finset.mem_mk, multiset.ndunion_eq_union, forall_true_iff] } }
-        { cases wf
-          simp only [mem_cons]
-          simp only [fv_of_fn_body, fv_of_expr, Finset.insert_empty, Finset.mem_union,
-            Finset.mem_singleton, Finset.mem_erase] at y𝕆_sub_FV
-          intros z h'
-          cases h'
-          { rwa [h' ]}
-          have h'', from y𝕆_sub_FV h'
-          cases h''
-          { rw [h'']
-            rwa [FV_C_eq_FV] at h_1 }
-          { exact h''.right } } }
-      rw [←ne.def, not_𝕆_iff_𝔹] at h
-      have x_in_y𝔹 : x ∈ y𝔹
-      { let := subset_iff.mp (FV_sub_wf_context wf)
-        simp only [fv_of_fn_body, fv_of_expr, mem_union, Finset.singleton_val, to_finset_val
-          Finset.insert_empty, mem_erase_dup, Finset.erase_val,
-          Finset.union_val, mem_singleton] at this
-        have h : x ∈ y𝕆 ∨ x ∈ y𝔹, from this (Or.inl rfl)
-        cases h
-        { rw [y𝕆_𝕆 x h_1] at h
-          contradiction }
-        { assumption } }
-      apply linear.proj_𝔹
-      { simpa }
-      rw [add_comm, ←cons_add, add_comm, ←map_cons (∶ 𝔹)]
-      apply ih
-      any_goals { assumption }
-      { cases wf
-        simp only [nodup_cons]
-        simp only [not_or_distrib, mem_union, ndunion_eq_union, to_finset_val
-          nodup_erase_dup, mem_erase_dup, Finset.mem_mk] at wf_z_undef
-        exact ⟨wf_z_undef.right, nd_y𝔹⟩ }
-      { intros z z_in_y𝕆
-        by_cases z = y
-        { cases wf
-          simp only [not_or_distrib, mem_union, ndunion_eq_union, to_finset_val
-            nodup_erase_dup, mem_erase_dup, Finset.mem_mk] at wf_z_undef
-          rw [h at z_in_y𝕆]
-          exact absurd z_in_y𝕆 wf_z_undef.left }
-        { rw [function.update_noteq]
-          { exact y𝕆_𝕆 z z_in_y𝕆 }
-          { assumption } } }
-      { simp only [mem_cons]
-        intros z h'
-        cases h'
-        { rw [h', rw function.update_same ]}
-        { by_cases eq : y = z
-          { rw [eq, rw function.update_same ]}
-          rw [function.update_noteq]
-          { exact y𝔹_𝔹 z h' }
-          symmetry
-          assumption } }
-      { cases wf
-        apply wf_FV_sandwich _ _ wf_F_wf
-        { let := FV_sub_wf_context wf_F_wf
-          rw [Finset.subset_iff at ⊢ this]
-          simp only [mem_union, ndunion_eq_union, to_finset_val, nodup_erase_dup, Finset.mem_union, Finset.union_insert
-            Finset.mem_insert, mem_erase_dup, to_finset_cons, Finset.mem_mk, List.mem_toFinset] at ⊢ this
-          assumption }
-        { rw [Finset.subset_iff]
-          simp only [mem_erase_dup,mem_union, nodup_erase_dup, imp_self, to_finset_val, List.mem_toFinset, to_finset_cons
-            Finset.mem_union, Finset.union_insert, Finset.mem_insert, Finset.mem_mk, ndunion_eq_union, forall_true_iff] } }
-      { simp only [fv_of_fn_body, fv_of_expr, Finset.insert_empty, Finset.mem_union, Finset.mem_singleton, Finset.mem_erase] at y𝕆_sub_FV
-        intros z z_in_y𝕆
-        have h', from y𝕆_sub_FV z_in_y𝕆
-        cases h'
-        { rw [h' at z_in_y𝕆]
-          rw [y𝕆_𝕆 x z_in_y𝕆] at h
-          contradiction }
-        { exact h'.right } }
-    case RcCorrectness.Expr.const_app_full : c' ys {
-      unfold C
-      apply C_app_rc_insertion_correctness ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV
-      simp only [List.map_map]
-      have : ∀ y ∈ ys, ((λ (yτ : Var × LinType), yτ.fst ∶ yτ.snd) ∘ (λ (y : Var), (y, β c' y))) y = (λ (y : Var), y ∶ β c' y) y
-      { intros y' y'_in_ys
-        refl }
-      rw [List.map_congr this]
-      exact linear.const_app_full β ys c'
-    case RcCorrectness.Expr.const_app_part : c' ys {
-      unfold C
-      have : ∀ y ∈ ys, (y, β c' y) = (y, 𝕆)
-      { cases wf
-        intros y' y'_in_ys
-        have not_𝔹, from wf_no_𝔹_var y'
-        rw [not_𝔹_iff_𝕆 at not_𝔹]
-        rw [not_𝔹 ]}
-      rw [List.map_congr this]
-      apply C_app_rc_insertion_correctness ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV
-      rw [List.map_map]
-      have : ∀ y ∈ ys, ((λ (yτ : Var × LinType), yτ.fst ∶ yτ.snd) ∘ (λ (y : Var), (y, 𝕆))) y = (λ (y : Var), y ∶ 𝕆) y
-      { intros y' y'_in_ys
-        refl }
-      rw [List.map_congr this]
-      exact linear.const_app_part β ys c'
-    case RcCorrectness.Expr.var_app : x z {
-      unfold C
-      apply C_app_rc_insertion_correctness ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV
-      simp only [List.map]
-      exact linear.var_app β x z
-    case RcCorrectness.Expr.ctor : i ys {
-      unfold C
-      apply C_app_rc_insertion_correctness ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV
-      rw [List.map_map]
-      have : ∀ y ∈ ys, ((λ (yτ : Var × LinType), yτ.fst ∶ yτ.snd) ∘ (λ (y : Var), (y, 𝕆))) y = (λ (y : Var), y ∶ 𝕆) y
-      { intros y' y'_in_ys
-        refl }
-      rw [List.map_congr this]
-      exact linear.ctor_app β ys i
+            · cases wf
+              grind only [= Finset.mem_union, = Multiset.mem_toFinset]
+            · grind only [= Function.update.eq_1, #3c6c]
+          · cases wf
+            rename_i z_undef x_def z_used F_wf
+            intro x_1 a
+            simp_all only [Multiset.mem_toFinset, implies_true, true_and, Finset.mem_union, not_or, true_or,
+              Multiset.toFinset_cons, Finset.mem_insert]
+            obtain ⟨left, right⟩ := z_undef
+            cases a with
+            | inl h =>
+              subst h
+              simp_all only
+            | inr h_2 => sorry
+          · cases wf
+            simp only [fv_of_fn_body, fv_of_expr, Finset.mem_union,
+              Finset.mem_singleton, Finset.mem_erase] at y𝕆_sub_FV
+            rename_i z_undef x_def z_used F_wf
+            simp_all only [Multiset.mem_toFinset, implies_true, true_and, Finset.mem_union, not_or, true_or,
+              ne_eq, Multiset.toFinset_cons, Finset.insert_union]
+            obtain ⟨left, right⟩ := z_undef
+            sorry
+        · simp_all only [Multiset.mem_toFinset, implies_true, true_and, Decidable.not_not]
+          sorry
+      · simp_all only [Multiset.mem_toFinset, implies_true]
+        sorry
+    | const_app_full c' ys =>
+      simp only [C]
+      simp_all only [Multiset.mem_toFinset, implies_true]
+      sorry
+    | const_app_part c' ys =>
+      simp only [C]
+      have : ∀ y ∈ ys, (y, β c' y) = (y, 𝕆) := by
+        cases wf with
+        | let_const_app_part ys_def no_𝔹_var z_used z_undef F_wf =>
+          intros y' y'_in_ys
+          have not_𝔹 := no_𝔹_var y'
+          rw [not_𝔹_iff_𝕆] at not_𝔹
+          rw [not_𝔹 ]
+      rw [List.map_congr_left this]
+      simp_all only [Multiset.mem_toFinset, implies_true, Prod.mk.injEq, true_and]
+      sorry
+    | var_app x z =>
+      simp only [C]
+      simp_all only [Multiset.mem_toFinset, implies_true]
+      sorry
+    | ctor i ys =>
+      simp only [C]
+      simp_all only [Multiset.mem_toFinset, implies_true]
+      sorry
   case «case» x Fs ih  =>
     unfold C
-    have FV_sub_y𝕆_y𝔹 : (fv_of_fn_body (case x of Fs)).val ⊆ y𝕆 + y𝔹
-    { let := FV_sub_wf_context wf
-      rw [Finset.subset_def] at this
-      rw [subset_iff at ⊢ this]
-      simp only [mem_union, to_finset_val, mem_add, mem_erase_dup, Finset.union_val] at ⊢ this
-      assumption }
-    cases wf
-    simp only [mem_union, ndunion_eq_union, to_finset_val, nodup_erase_dup, mem_erase_dup, Finset.mem_mk] at wf_x_def
+    have FV_sub_y𝕆_y𝔹 : (fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).val ⊆ y𝕆 + y𝔹 := by
+      let h_sub := FV_sub_wf_context wf
+      intros z z_in
+      have h_in_union := h_sub z_in
+      simp only [Finset.mem_union, Multiset.mem_toFinset] at h_in_union
+      simp only [Multiset.mem_add]
+      exact h_in_union
+    cases wf with | case wf_x_def _ =>
+    simp only [Finset.mem_union, Multiset.mem_toFinset] at wf_x_def
     cases wf_x_def
-    apply linear.case_𝕆
-    { simpa }
+    apply Linear.case_𝕆
+    · simpa
     swap
-    apply linear.case_𝔹
-    { simpa }
-    all_goals {
-      intros F' h
-      rw [List.map_wf_eq_map] at h
-      rw [List.mem_map] at h
-      rcases h with ⟨F, ⟨F_in_Fs, F'_def⟩⟩
-      rw [←F'_def]
-      apply inductive_dec
-      any_goals { assumption }
-      { rw [subset_iff]
-        rw [Finset.sort_eq]
-        intros y y_in_y𝕆
-        exact y𝕆_sub_FV y_in_y𝕆 }
-      { simp only [Finset.sort_eq]
-        assumption }
-      { exact Finset.sort_nodup var_le (fv_of_fn_body (case x of Fs)) }
-      apply ih
-      any_goals { assumption }
-      { apply nodup_filter
-        assumption }
-      { simp only [and_imp, mem_filter, Finset.mem_sort]
-        intros y y_in_y𝕆 h
-        exact y𝕆_𝕆 y y_in_y𝕆 }
-      { have wf, from wf_Fs_wf F F_in_Fs
-        apply wf_FV_sandwich _ _ wf
-        { rw [Finset.subset_iff]
-          rw [subset_iff at FV_sub_y𝕆_y𝔹]
-          simp only [fv_of_fn_body, List.map_wf_eq_map, mem_ndinsert, mem_add, Finset.insert_val] at FV_sub_y𝕆_y𝔹
-          simp [fv_of_fn_body, List.map_wf_eq_map, not_or_distrib]
-          intros y y_in_FV
-          replace FV_sub_y𝕆_y𝔹 := @FV_sub_y𝕆_y𝔹 y
-          rw [←Finset.mem_def at FV_sub_y𝕆_y𝔹]
-          simp only [exists_prop, List.mem_map, Finset.mem_join] at FV_sub_y𝕆_y𝔹
-          rw [FV_C_eq_FV]
-          have : ∃ (S : Finset Var), (∃ (a : FnBody), a ∈ Fs ∧ fv_of_fn_body a = S) ∧ y ∈ S
-          { use fv_of_fn_body F, apply and.intro _ y_in_FV, use F, exact ⟨F_in_Fs, rfl⟩ }
-          have : y ∈ y𝕆 ∨ y ∈ y𝔹, from FV_sub_y𝕆_y𝔹 (Or.inr this)
-          cases this
-          { exact Or.inr ⟨this_1, y_in_FV⟩ }
-          { exact Or.inl this_1 } }
-        { rw [Finset.subset_iff]
-          simp only [mem_union, ndunion_eq_union, mem_filter, to_finset_val
-            nodup_erase_dup, Finset.mem_union, mem_erase_dup, Finset.mem_mk, List.mem_toFinset]
-          intros y h
-          cases h
-          { exact Or.inl (h.left) }
-          { exact Or.inr h } } }
-      { simp only [and_imp, mem_filter, FV_C_eq_FV, imp_self, forall_true_iff] }
+    apply Linear.case_𝔹
+    · simpa
+    · intro F a
+      simp_all only [Multiset.mem_toFinset, List.mem_map]
+      obtain ⟨w, h_1⟩ := a
+      obtain ⟨left, right⟩ := h_1
+      subst right
+      sorry
+    · intro F a
+      simp_all only [Multiset.mem_toFinset, List.mem_map]
+      obtain ⟨w, h_1⟩ := a
+      obtain ⟨left, right⟩ := h_1
+      subst right
+      sorry
   case «inc» x F ih  =>
     cases wf
   case «dec» x F ih  =>
     cases wf
+  case nil =>
+    simp_all only [List.not_mem_nil]
+  case cons head tail ih_head ih_tail =>
+    rename_i head_ih tail_ih F a y𝕆 y𝔹 βₗ a_1 a_2
+    simp_all only [Multiset.mem_toFinset, List.mem_cons]
+    cases a with
+    | inl h =>
+      subst h
+      apply @head_ih
+      · simp_all only
+      · simp_all only
+      · intro y a
+        simp_all only
+      · intro y a
+        simp_all only
+      · intro x a
+        apply ih_head
+        simp_all only [Multiset.mem_toFinset]
+      · simp_all only
+    | inr h_1 => simp_all only [implies_true]
 
-theorem rc_insertion_correctness (β : Const → Var → LinType) (δ : Program) (wf : β ⊢ δ) : β ⊩ C_prog β δ :=
-by
-  cases wf
-  split
+theorem rc_insertion_correctness (β : Const → Var → LinType) (δ : Program) (wf : β ⊢ᵖʷ δ) : β ⊩ᵖ C_prog β δ := by
+  cases wf with
+  | program const_wf =>
+  constructor
   intro c
-  replace wf_const_wf := wf_const_wf c
-  cases wf_const_wf
-  rename wf_const_wf_F_wf wf
-  split
+  replace const_wf := const_wf c
+  cases const_wf with
+  | const wf nd_ys =>
+  constructor
   simp only [C_prog]
   let ys := (δ c).ys
-  let Γ := (↑(List.map (λ (y : Var), y ∶ β c y) ys) : multiset typed_var)
-  let y𝕆 := filter (λ y, β c y = 𝕆) ys
-  let y𝔹 := filter (λ y, β c y = 𝔹) ys
-  obtain ⟨y𝕆_𝕆, y𝔹_𝔹⟩
-    : (∀ y ∈ y𝕆, β c y = 𝕆) ∧ (∀ y ∈ y𝔹, β c y = 𝔹)
-  { repeat { split }; { intros y h, rw (mem_filter.mp h).right } }
-  obtain ⟨y𝕆_sub_ys, y𝔹_sub_ys⟩ : (y𝕆 ⊆ ys ∧ y𝔹 ⊆ ys)
-  { repeat { split }; simp only [filter_subset] }
-  obtain ⟨ys_𝕆_sub_y𝕆, ys_𝔹_sub_y𝔹⟩
-    : (∀ y ∈ ys, β c y = 𝕆 → y ∈ y𝕆) ∧ (∀ y ∈ ys, β c y = 𝔹 → y ∈ y𝔹)
-  { repeat { split }
-    { intros y y_in_ys y_ty
-      simp only [mem_filter, mem_coe], try rw ←coe_eq_coe, exact ⟨y_in_ys, y_ty⟩ } }
-  obtain ⟨nd_y𝕆, nd_y𝔹⟩ : multiset.Nodup y𝕆 ∧ multiset.Nodup y𝔹
-  { split; exact nodup_filter _ (coe_nodup.mpr wf_const_wf_nd_ys) }
-  have ys_subdiv : ↑ys = y𝕆 + y𝔹
-  { have : ∀ y ∈ (↑ys : multiset Var), β c y = 𝔹 ↔ β c y ≠ 𝕆
-    { intros y y_in_ys
-      split; intro h; cases β c y; simp at h ⊢; assumption }
-    simp only [y𝕆, y𝔹]
-    rw [filter_congr this]
-    exact (filter_add_not ↑ys).symm }
-  have Γ_subdiv : ↑(List.map (λ (y : Var), y ∶ β c y) ys) = (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹)
-  { have : ↑(List.map (λ (y : Var), y ∶ β c y) ys) = map (λ (y : Var), y ∶ β c y) ↑ys
-      from rfl
+  let Γ := (↑(List.map (fun (y : Var) => y ∶ β c y) ys) : Multiset TypedVar)
+  let y𝕆 := List.filter (fun y => β c y = 𝕆) ys
+  let y𝔹 := List.filter (fun y => β c y = 𝔹) ys
+  have y𝕆_𝕆 : ∀ y ∈ y𝕆, β c y = 𝕆 := by
+    intros y hy
+    simp only [y𝕆, List.mem_filter, decide_eq_true_iff] at hy
+    exact hy.2
+  have y𝔹_𝔹 : ∀ y ∈ y𝔹, β c y = 𝔹 := by
+    intros y hy
+    simp only [y𝔹, List.mem_filter, decide_eq_true_iff] at hy
+    exact hy.2
+  have y𝕆_sub_ys : (y𝕆 : Multiset Var) ⊆ ↑ys := by
+    intro y hy
+    simp only [Multiset.mem_coe, y𝕆, List.mem_filter, decide_eq_true_iff] at hy
+    exact hy.1
+  have y𝔹_sub_ys : (y𝔹 : Multiset Var) ⊆ ↑ys := by
+    intro y hy
+    simp only [Multiset.mem_coe, y𝔹, List.mem_filter, decide_eq_true_iff] at hy
+    exact hy.1
+  have ys_𝕆_sub_y𝕆 : ∀ y ∈ ys, β c y = 𝕆 → y ∈ y𝕆 := by
+    intros y hy hty
+    simp only [y𝕆, List.mem_filter, decide_eq_true_iff]
+    exact ⟨hy, hty⟩
+  have ys_𝔹_sub_y𝔹 : ∀ y ∈ ys, β c y = 𝔹 → y ∈ y𝔹 := by
+    intros y hy hty
+    simp only [y𝔹, List.mem_filter, decide_eq_true_iff]
+    exact ⟨hy, hty⟩
+  have nd_y𝕆 : Multiset.Nodup (y𝕆 : Multiset Var) := by
+    rw [Multiset.coe_nodup]
+    exact List.Nodup.filter _ nd_ys
+  have nd_y𝔹 : Multiset.Nodup (y𝔹 : Multiset Var) := by
+    rw [Multiset.coe_nodup]
+    exact List.Nodup.filter _ nd_ys
+  have ys_subdiv : ↑ys = (y𝕆 : Multiset Var) + (y𝔹 : Multiset Var) := by
+    have this_subdiv : ∀ y ∈ (↑ys : Multiset Var), β c y = 𝔹 ↔ β c y ≠ 𝕆 := by
+      intros y y_in_ys
+      cases β c y <;> simp
+    simp only [y𝕆, y𝔹, ← Multiset.filter_coe]
+    have h_filter : Multiset.filter (fun y => β c y = 𝔹) ↑ys = Multiset.filter (fun y => β c y ≠ 𝕆) ↑ys := by
+      apply Multiset.filter_congr
+      intros y y_in_ys
+      exact this_subdiv y y_in_ys
+    rw [h_filter]
+    exact (Multiset.filter_add_not (fun y => β c y = 𝕆) ↑ys).symm
+  have Γ_subdiv : ↑(List.map (fun (y : Var) => y ∶ β c y) ys) = (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) := by
+    have : ↑(List.map (fun (y : Var) => y ∶ β c y) ys) = Multiset.map (fun (y : Var) => y ∶ β c y) ↑ys := rfl
     rw [this]
     rw [ys_subdiv]
-    simp only [map_add]
-    have : ∀ (τ : LinType) (yτ : multiset Var), (∀ y ∈ yτ, β c y = τ) →
-      ∀ y ∈ yτ, (y ∶ β c y) = (y ∶ τ)
-    { intros τ yτ h y y_in_yτ
-      rw [h y y_in_yτ ]}
-    simp only [map_congr (this 𝕆 y𝕆 y𝕆_𝕆), map_congr (this 𝔹 y𝔹 y𝔹_𝔹)] }
-  have y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (dec_𝕆 ((δ c).ys) (C β ((δ c).F) (β c)) (β c))
-  { rw [Finset.subset_iff]
+    simp only [Multiset.map_add]
+    have : ∀ (τ : LinType) (yτ : Multiset Var), (∀ y ∈ yτ, β c y = τ) →
+      ∀ y ∈ yτ, (y ∶ β c y) = (y ∶ τ) := by
+      intros τ yτ h y y_in_yτ
+      rw [h y y_in_yτ ]
+    have h_map1 : Multiset.map (fun y => y ∶ β c y) ↑y𝕆 = Multiset.map (fun y => y ∶ 𝕆) ↑y𝕆 :=
+      Multiset.map_congr rfl (this 𝕆 ↑y𝕆 y𝕆_𝕆)
+    have h_map2 : Multiset.map (fun y => y ∶ β c y) ↑y𝔹 = Multiset.map (fun y => y ∶ 𝔹) ↑y𝔹 :=
+      Multiset.map_congr rfl (this 𝔹 ↑y𝔹 y𝔹_𝔹)
+    rw [h_map1, h_map2]
+  have y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (dec_𝕆 ((δ c).ys) (C β ((δ c).fn_body) (β c)) (β c)) := by
+    rw [Finset.subset_iff]
     intros y y_in_y𝕆
-    simp only [mem_filter, mem_coe, List.mem_toFinset] at y_in_y𝕆
-    exact vars_sub_FV_dec_𝕆 ys (C β ((δ c).F) (β c)) (β c) y y_in_y𝕆.left y_in_y𝕆.right }
+    simp only [y𝕆, List.mem_toFinset, List.mem_filter, decide_eq_true_iff] at y_in_y𝕆
+    exact vars_sub_FV_dec_𝕆 ys (C β ((δ c).fn_body) (β c)) (β c) y y_in_y𝕆.left y_in_y𝕆.right
   rw [Γ_subdiv]
   unfold List.toFinset at wf
   rw [ys_subdiv] at wf
-  have : ↑ys ⊆ y𝕆 + y𝔹, { rw [ys_subdiv, exact subset.refl _ ]}
-  apply inductive_dec y𝕆_sub_ys this wf_const_wf_nd_ys y𝕆_𝕆 y𝔹_𝔹 nd_y𝕆 nd_y𝔹
-  let y𝕆' := filter (λ (y : Var), y ∈ fv_of_fn_body (C β ((δ c).F) (β c))) y𝕆
-  have y𝕆'_𝕆 : ∀ y ∈ y𝕆', β c y = 𝕆
-  { simp only [and_imp, mem_filter, mem_coe]
-    intros y y_in_ys y_𝕆 y_in_FV
-    assumption }
-  have nd_y𝕆' : Nodup y𝕆', from nodup_filter _ nd_y𝕆
-  have y𝕆'_sub_y𝕆 : y𝕆' ⊆ y𝕆, from filter_subset y𝕆
-  have y𝕆'_sub_FV : y𝕆'.toFinset ⊆ fv_of_fn_body (δ c).F
-  { rw [Finset.subset_iff, rw [Finset.subset_iff] at y𝕆_sub_FV, rw [subset_iff] at y𝕆'_sub_y𝕆]
-    simp only [List.mem_toFinset], simp only [List.mem_toFinset] at y𝕆_sub_FV
-    rw [FV_dec_𝕆_filter at y𝕆_sub_FV]
-    intros x x_in_y𝕆'
-    have h, from y𝕆_sub_FV (y𝕆'_sub_y𝕆 x_in_y𝕆')
-    simp only [mem_filter, mem_coe] at x_in_y𝕆'
-    simp only [List.List.mem_toFinset, Finset.mem_union, Finset.mem_filter] at h
-    cases h
-    { exact absurd x_in_y𝕆'.right h.right.right }
-    rwa [FV_C_eq_FV] at h }
-  have wf' : (β; δ; toFinset y𝕆' ∪ toFinset y𝔹 ⊢ (δ c).F)
-  { rw [to_finset_add] at wf
-    have h1 : fv_of_fn_body (δ c).F ⊆ toFinset y𝕆' ∪ toFinset y𝔹
-    { have : fv_of_fn_body (δ c).F ⊆ toFinset y𝕆 ∪ toFinset y𝔹, from FV_sub_wf_context wf
+  have : ↑ys ⊆ (y𝕆 : Multiset Var) + (y𝔹 : Multiset Var) := by
+    rw [ys_subdiv]
+    exact Multiset.Subset.refl _
+  apply inductive_dec y𝕆_sub_ys this nd_ys y𝕆_𝕆 y𝔹_𝔹 nd_y𝕆 nd_y𝔹
+  let y𝕆' := Multiset.filter (fun (y : Var) => y ∈ fv_of_fn_body (C β ((δ c).fn_body) (β c))) y𝕆
+  have y𝕆'_𝕆 : ∀ y ∈ y𝕆', β c y = 𝕆 := by
+    intros y hy
+    exact y𝕆_𝕆 y (Multiset.mem_of_mem_filter hy)
+  have nd_y𝕆' : Multiset.Nodup y𝕆' := Multiset.Nodup.filter _ nd_y𝕆
+  have y𝕆'_sub_y𝕆 : y𝕆' ⊆ y𝕆 := Multiset.filter_subset _ _
+  have y𝕆'_sub_FV : y𝕆'.toFinset ⊆ fv_of_fn_body (δ c).fn_body := by
+    rw [Finset.subset_iff]
+    intros x x_in_yOrig
+    rw [Multiset.mem_toFinset] at x_in_yOrig
+    have h_in : x ∈ y𝕆 := y𝕆'_sub_y𝕆 x_in_yOrig
+    have h_in_toFinset : x ∈ y𝕆.toFinset := List.mem_toFinset.mpr h_in
+    rw [Finset.subset_iff] at y𝕆_sub_FV
+    have h := y𝕆_sub_FV h_in_toFinset
+    rw [FV_dec_𝕆_filter] at h
+    simp only [List.mem_toFinset, Finset.mem_union, Finset.mem_filter] at h
+    cases h with
+    | inl h_in_dec =>
+      have h_FV := (Multiset.mem_filter.mp x_in_yOrig).2
+      exact absurd h_FV h_in_dec.2.2
+    | inr h_in_FV =>
+      rw [FV_C_eq_FV] at h_in_FV
+      exact h_in_FV
+  have wf' : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆'.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (δ c).fn_body := by
+    rw [Multiset.toFinset_add] at wf
+    have h1 : fv_of_fn_body (δ c).fn_body ⊆ y𝕆'.toFinset ∪ y𝔹.toFinset := by
+      have : fv_of_fn_body (δ c).fn_body ⊆ y𝕆.toFinset ∪ y𝔹.toFinset := FV_sub_wf_context wf
       rw [Finset.subset_iff] at this
       rw [Finset.subset_iff]
       intros x x_in_FV
       let := this x_in_FV
-      simp only [mem_filter, mem_coe, Finset.mem_union, List.mem_toFinset] at this ⊢
-      cases this
-      { rw [FV_C_eq_FV]
-        exact Or.inl ⟨this_1, x_in_FV ⟩ }
-      { exact Or.inr this_1 } }
-    have h2 : toFinset y𝕆' ∪ toFinset y𝔹 ⊆ toFinset y𝕆 ∪ toFinset y𝔹
-    { rw [subset_iff at y𝕆'_sub_y𝕆]
-      simp only [Finset.subset_iff, Finset.mem_union, List.mem_toFinset]
+      simp only [Finset.mem_union, Multiset.mem_toFinset] at this ⊢
+      cases this with
+      | inl h_in =>
+        rw [← FV_C_eq_FV] at x_in_FV
+        have h_in' : x ∈ y𝕆 := List.mem_toFinset.mp h_in
+        have h_in_y𝕆' : x ∈ y𝕆' := Multiset.mem_filter.mpr ⟨h_in', x_in_FV⟩
+        exact Or.inl h_in_y𝕆'
+      | inr h_in => exact Or.inr h_in
+    have h2 : y𝕆'.toFinset ∪ y𝔹.toFinset ⊆ y𝕆.toFinset ∪ y𝔹.toFinset := by
+      rw [Multiset.subset_iff] at y𝕆'_sub_y𝕆
+      simp only [Finset.subset_iff, Finset.mem_union, Multiset.mem_toFinset]
       intros x h
-      cases h
-      { exact Or.inl (y𝕆'_sub_y𝕆 h) }
-      { exact Or.inr h } }
-    exact wf_FV_sandwich h1 h2 wf }
+      cases h with
+      | inl h_in => exact Or.inl (Multiset.mem_toFinset.mpr (y𝕆'_sub_y𝕆 h_in))
+      | inr h_in => exact Or.inr h_in
+    exact wf_FV_sandwich h1 h2 wf
   exact rc_insertion_correctness' nd_y𝕆' nd_y𝔹 y𝕆'_𝕆 y𝔹_𝔹 y𝕆'_sub_FV wf'
 
 end RcCorrectness
