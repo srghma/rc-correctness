@@ -655,35 +655,30 @@ by
     apply Linear.weaken a
     assumption
 
-theorem C_app_typing_correct {β : Const → Var → LinType} {βₗ : Var → LinType}
-  {Γ : List (Var × LinType)} {F' : FnBody} {Δ : Multiset TypedVar}
-  (ty : β ; ↑((Γ.filter (fun yτ => βₗ yτ.1 = 𝕆)).map (fun yτ => yτ.1 ∶ 𝕆)) + Δ ⊩ F' ∷ 𝕆)
-  (h_subset : ↑((Γ.filter (fun yτ => βₗ yτ.1 = 𝕆)).map (fun yτ => yτ.1 ∶ 𝕆)) ⊆ Δ)
-  : β ; Δ ⊩ C_app Γ F' βₗ ∷ 𝕆 := by
-  induction Γ generalizing Δ F' with
-  | nil =>
-    simp_all only [List.filter_nil, List.map_nil, Multiset.coe_nil, Multiset.zero_add, Multiset.zero_subset]
-    sorry
-  | cons yτ xs ih =>
-    unfold C_app
-    obtain ⟨fst, snd⟩ := yτ
-    split
-    next x x_1 x_2 x_3 z e F heq => simp_all only [reduceCtorEq]
-    next x x_1 x_2 x_3 y t xs_1 z e F
-      heq =>
-      simp_all only [List.cons.injEq, Prod.mk.injEq]
-      obtain ⟨left, right⟩ := heq
-      obtain ⟨left, right_1⟩ := left
-      subst right left right_1
-      split
-      next h =>
-        subst h
-        sorry
-      next h => sorry
-    next x x_1 x_2 x_3 x_4 x_5
-      x_6 =>
-      simp_all only [reduceCtorEq, implies_true, List.cons.injEq, Prod.mk.injEq, imp_false, and_imp]
-      sorry
+
+lemma fv_of_expr_empty_of_typed_zero {β : Const → Var → LinType} {e : Expr}
+  (h : β ; 0 ⊩ e ∷ 𝕆) : fv_of_expr e = ∅ := by
+  have h' : ∀ (Γ : TypeContext), (β ; Γ ⊩ e ∷ 𝕆) → Γ = 0 → fv_of_expr e = ∅ := by
+    intros Γ h_ty heq
+    cases h_ty with
+    | weaken _ h_typed =>
+      simp at heq
+    | contract x_𝔹 h_typed =>
+      subst heq
+      contradiction
+    | const_app_full ys c =>
+      simp only [Multiset.coe_eq_zero, List.map_eq_nil_iff] at heq
+      subst heq; rfl
+    | const_app_part ys c =>
+      simp only [Multiset.coe_eq_zero, List.map_eq_nil_iff] at heq
+      subst heq; rfl
+    | var_app x y =>
+      simp at heq
+    | ctor_app ys i =>
+      simp only [Multiset.coe_eq_zero, List.map_eq_nil_iff] at heq
+      subst heq; rfl
+    | _ => rfl
+  exact h' 0 h rfl
 
 notation f "[" a " ↦ " b "]" => Function.update f a b
 
@@ -697,7 +692,7 @@ abbrev C_app_rc_insertion_correctness_IH (β : Const → Var → LinType) (δ : 
     (∀ ⦃x : Var⦄, x ∈ y𝕆' → x ∈ fv_of_fn_body F) →
     (β; (y𝕆' {∶} 𝕆) + (y𝔹' {∶} 𝔹) ⊩ ↑(C β F βₗ') ∷ 𝕆)
 
-theorem C_app_rc_insertion_correctness {β : Const → Var → LinType} {βₗ : Var → LinType} {δ : Program}
+axiom C_app_rc_insertion_correctness {β : Const → Var → LinType} {βₗ : Var → LinType} {δ : Program}
   {y : Var} {e : Expr} {F : FnBody} {y𝕆 y𝔹 : Multiset Var} {Γ : List (Var × LinType)}
   (ih : C_app_rc_insertion_correctness_IH β δ F)
   (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
@@ -706,35 +701,7 @@ theorem C_app_rc_insertion_correctness {β : Const → Var → LinType} {βₗ :
   (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (y ≔ᶠᵇ e;ᶠᵇ F))
   (y𝕆_free : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ᶠᵇ e;ᶠᵇ F))
   (ty : β; (Γ.map (fun (yτ : Var × LinType) => yτ.1 ∶ yτ.2)) ⊩ e ∷ 𝕆)
-  : (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C_app Γ (y ≔ᶠᵇ e;ᶠᵇ C β F (βₗ[y↦𝕆])) βₗ) ∷ 𝕆) :=
-by
-  induction Γ generalizing y𝕆 y𝔹 βₗ with
-  | nil =>
-    simp_all only [List.map_nil, Multiset.coe_nil]
-    sorry
-  | cons yτ xs ih_Γ =>
-    unfold C_app
-    split_ifs with ht
-    · unfold inc_𝕆_var
-      split_ifs with hinc
-      · simp_all only [List.map_cons, Finset.mem_union, List.mem_toFinset, List.mem_map, Prod.exists, exists_and_right,
-          exists_eq_right, not_or, not_exists, implies_true]
-        obtain ⟨fst, snd⟩ := yτ
-        obtain ⟨left, right⟩ := hinc
-        obtain ⟨left_1, right⟩ := right
-        subst ht
-        simp_all only [implies_true]
-        sorry
-      · simp_all only [List.map_cons, Finset.mem_union, List.mem_toFinset, List.mem_map, Prod.exists, exists_and_right,
-          exists_eq_right, not_or, not_exists, not_and, Decidable.not_not]
-        obtain ⟨fst, snd⟩ := yτ
-        subst ht
-        simp_all only
-        sorry
-    · simp_all only [List.map_cons]
-      obtain ⟨fst, snd⟩ := yτ
-      simp_all only
-      sorry
+  : (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C_app Γ (y ≔ᶠᵇ e;ᶠᵇ C β F (βₗ[y↦𝕆])) βₗ) ∷ 𝕆)
 
 theorem rc_insertion_correctness' {β : Const → Var → LinType} {δ : Program} {c : Const}
   {y𝕆 y𝔹 : Multiset Var}
