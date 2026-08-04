@@ -11,10 +11,10 @@ srcDir = "src"
 # scope = "leanprover-community"
 # rev = "v4.33.0-rc1"
 
-[[require]]
-name = "aesop"
-scope = "leanprover-community"
-rev = "v4.33.0-rc1"
+# [[require]]
+# name = "aesop"
+# scope = "leanprover-community"
+# rev = "v4.33.0-rc1"
 
 [[require]]
 name = "mathlib"

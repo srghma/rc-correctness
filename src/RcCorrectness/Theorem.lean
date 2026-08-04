@@ -655,86 +655,879 @@ by
     apply Linear.weaken a
     assumption
 
-theorem C_app_typing_correct {β : Const → Var → LinType} {βₗ : Var → LinType}
-  {Γ : List (Var × LinType)} {F' : FnBody} {Δ : Multiset TypedVar}
-  (ty : β ; ↑((Γ.filter (fun yτ => βₗ yτ.1 = 𝕆)).map (fun yτ => yτ.1 ∶ 𝕆)) + Δ ⊩ F' ∷ 𝕆)
-  (h_subset : ↑((Γ.filter (fun yτ => βₗ yτ.1 = 𝕆)).map (fun yτ => yτ.1 ∶ 𝕆)) ⊆ Δ)
-  : β ; Δ ⊩ C_app Γ F' βₗ ∷ 𝕆 := by
-  induction Γ generalizing Δ F' with
-  | nil =>
-    simp_all only [List.filter_nil, List.map_nil, Multiset.coe_nil, Multiset.zero_add, Multiset.zero_subset]
-    sorry
-  | cons yτ xs ih =>
-    unfold C_app
-    obtain ⟨fst, snd⟩ := yτ
-    split
-    next x x_1 x_2 x_3 z e F heq => simp_all only [reduceCtorEq]
-    next x x_1 x_2 x_3 y t xs_1 z e F
-      heq =>
-      simp_all only [List.cons.injEq, Prod.mk.injEq]
-      obtain ⟨left, right⟩ := heq
-      obtain ⟨left, right_1⟩ := left
-      subst right left right_1
-      split
-      next h =>
-        subst h
-        sorry
-      next h => sorry
-    next x x_1 x_2 x_3 x_4 x_5
-      x_6 =>
-      simp_all only [reduceCtorEq, implies_true, List.cons.injEq, Prod.mk.injEq, imp_false, and_imp]
-      sorry
-
 notation f "[" a " ↦ " b "]" => Function.update f a b
 
-abbrev C_app_rc_insertion_correctness_IH (β : Const → Var → LinType) (δ : Program) (F : FnBody) : Prop :=
-  ∀ {y𝕆' y𝔹' : Multiset Var} (βₗ' : Var → LinType),
-    Multiset.Nodup y𝕆' →
-    Multiset.Nodup y𝔹' →
-    (∀ (y : Var), y ∈ y𝕆' → βₗ' y = 𝕆) →
-    (∀ (y : Var), y ∈ y𝔹' → βₗ' y = 𝔹) →
-    (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆'.toFinset ∪ y𝔹'.toFinset ⊢ʷᶠᵇ F) →
-    (∀ ⦃x : Var⦄, x ∈ y𝕆' → x ∈ fv_of_fn_body F) →
-    (β; (y𝕆' {∶} 𝕆) + (y𝔹' {∶} 𝔹) ⊩ ↑(C β F βₗ') ∷ 𝕆)
+section CAppGeneral
 
-theorem C_app_rc_insertion_correctness {β : Const → Var → LinType} {βₗ : Var → LinType} {δ : Program}
-  {y : Var} {e : Expr} {F : FnBody} {y𝕆 y𝔹 : Multiset Var} {Γ : List (Var × LinType)}
-  (ih : C_app_rc_insertion_correctness_IH β δ F)
-  (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
-  (y𝕆_𝕆 : ∀ (y : Var), y ∈ y𝕆 → βₗ y = 𝕆)
-  (y𝔹_𝔹 : ∀ (y : Var), y ∈ y𝔹 → βₗ y = 𝔹)
-  (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (y ≔ᶠᵇ e;ᶠᵇ F))
-  (y𝕆_free : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ᶠᵇ e;ᶠᵇ F))
-  (ty : β; (Γ.map (fun (yτ : Var × LinType) => yτ.1 ∶ yτ.2)) ⊩ e ∷ 𝕆)
-  : (β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ ↑(C_app Γ (y ≔ᶠᵇ e;ᶠᵇ C β F (βₗ[y↦𝕆])) βₗ) ∷ 𝕆) :=
-by
-  induction Γ generalizing y𝕆 y𝔹 βₗ with
+/-! ### Typing of the `C_app` translation of `let`-bound applications
+
+`C_app args (z ≔ e; F) βₗ` decorates a `let`-bound application with reference count
+adjustments dictated by the parameter types recorded in `args`:
+
+* an `inc` in front for every owned (`𝕆`) parameter position whose argument is either
+  borrowed by the caller or still needed afterwards;
+* a `dec` inside the body for every borrowed (`𝔹`) parameter position whose argument is
+  owned by the caller and dead afterwards.
+
+The argument is split into
+
+* `C_app_base` : the final `Linear.let` step, once all arguments have been processed;
+* `C_app_gen`  : the induction over the argument list;
+* `C_app_main` : the packaging used for each of the four kinds of applications.
+-/
+
+/-- Multi-contraction: extra `𝔹`-typed copies of variables that already occur in the
+context may be dropped. -/
+lemma inductive_contract {β : Const → Var → LinType} {Γ : Multiset TypedVar}
+    {ys : Multiset Var} {r : Rc} {τ : LinType}
+    (h_mem : ∀ y ∈ ys, (y ∶ 𝔹) ∈ Γ)
+    (h : β; Γ + (ys {∶} 𝔹) ⊩ r ∷ τ) : β; Γ ⊩ r ∷ τ := by
+  induction ys using Multiset.induction_on with
+  | empty => simp at h; exact h
+  | cons a ys ih =>
+    have h_a_mem : (a ∶ 𝔹) ∈ Γ := h_mem a (Multiset.mem_cons_self a ys)
+    have h_ys_subset : ∀ y ∈ ys, (y ∶ 𝔹) ∈ Γ := fun y hy => h_mem y (Multiset.mem_cons_of_mem hy)
+    -- The key is that (a ::ₘ ys) {∶} 𝔹 = (a ∶ 𝔹) + ys {∶} 𝔹
+    -- Let's rewrite h to use this
+    have key : Γ + ((a ::ₘ ys) {∶} 𝔹) = Γ + ((a ∶ 𝔹) ::ₘ (ys {∶} 𝔹)) := by
+      simp
+    rw [key] at h
+    -- Need to rearrange: Γ + (a ∶ 𝔹) ::ₘ (ys {∶} 𝔹) = (a ∶ 𝔹) ::ₘ (Γ + ys {∶} 𝔹)
+    have key2 : Γ + ((a ∶ 𝔹) ::ₘ (ys {∶} 𝔹)) = (a ∶ 𝔹) ::ₘ (Γ + (ys {∶} 𝔹)) := by
+      simp
+    rw [key2] at h
+    have h_a_mem' : (a ∶ 𝔹) ∈ Γ + (ys {∶} 𝔹) := Multiset.mem_add.mpr (Or.inl h_a_mem)
+    have h' := Linear.contract h_a_mem' h
+    exact ih h_ys_subset h'
+
+/-- `dec_𝕆` only inspects `βₗ` at the variables of its list argument. -/
+lemma dec_𝕆_congr {l : List Var} {F : FnBody} {βₗ βₗ' : Var → LinType}
+    (h : ∀ y ∈ l, βₗ y = βₗ' y) : dec_𝕆 l F βₗ = dec_𝕆 l F βₗ' := by
+  induction l with
+  | nil => rfl
+  | cons x xs ih =>
+    simp only [dec_𝕆, List.foldr_cons]
+    have hx : βₗ x = βₗ' x := h x (by simp)
+    have ih' : ∀ y ∈ xs, βₗ y = βₗ' y := fun y hy => h y (by simp [hy])
+    have fold_eq : List.foldr (fun x acc => dec_𝕆_var x acc βₗ) F xs = List.foldr (fun x acc => dec_𝕆_var x acc βₗ') F xs := ih ih'
+    rw [dec_𝕆_var, dec_𝕆_var, fold_eq]
+    simp [hx]
+
+/-- Repeated variables in the list argument of `dec_𝕆` are irrelevant. -/
+lemma dec_𝕆_dedup (l : List Var) (F : FnBody) (βₗ : Var → LinType) :
+    dec_𝕆 l F βₗ = dec_𝕆 l.dedup F βₗ := by
+  induction l with
+  | nil => rfl
+  | cons y ys ih =>
+    by_cases hy : y ∈ ys
+    · rw [List.dedup_cons_of_mem hy]
+      -- Need to show dec_𝕆 (y :: ys) F βₗ = dec_𝕆 ys F βₗ
+      -- Key: after processing ys, y ∈ fv_of_fn_body (dec_𝕆 ys)
+      unfold dec_𝕆
+      -- dec_𝕆_var y (dec_𝕆 ys) = if βₗ y = 𝕆 ∧ y ∉ fv_of_fn_body (dec_𝕆 ys)
+      --                           then decᶠᵇ y;ᶠᵇ (dec_𝕆 ys) else (dec_𝕆 ys)
+      -- Since y ∈ ys, by FV_dec_𝕆_filter, y ∈ fv_of_fn_body (dec_𝕆 ys)
+      -- So the condition is false and we get dec_𝕆 ys
+      by_cases hyβ : βₗ y = 𝕆
+      · -- βₗ y = 𝕆, need to show y ∈ fv_of_fn_body (dec_𝕆 ys)
+        have hy_fv : y ∈ fv_of_fn_body (dec_𝕆 ys F βₗ) := by
+          rw [FV_dec_𝕆_filter]
+          simp only [Finset.mem_union, Finset.mem_filter, List.mem_toFinset]
+          by_cases hyF : y ∈ fv_of_fn_body F
+          · right; exact hyF
+          · left
+            exact ⟨hy, hyβ, hyF⟩
+        -- dec_𝕆_var y acc = acc when y ∈ fv_of_fn_body acc
+        have hv : dec_𝕆_var y (dec_𝕆 ys F βₗ) βₗ = dec_𝕆 ys F βₗ := by
+          unfold dec_𝕆_var
+          simp only [hyβ, true_and]
+          simp [hy_fv]
+        simp [dec_𝕆] at hv ih ⊢
+        rw [hv, ih]
+      · -- βₗ y ≠ 𝕆, so dec_𝕆_var y always returns acc
+        have hv : dec_𝕆_var y (List.foldr (fun x acc => dec_𝕆_var x acc βₗ) F ys) βₗ =
+                  List.foldr (fun x acc => dec_𝕆_var x acc βₗ) F ys := by
+          unfold dec_𝕆_var
+          simp [hyβ]
+        simp [dec_𝕆] at hv ih ⊢
+        rw [hv, ih]
+    · -- y ∉ ys, so (y :: ys).dedup = y :: ys.dedup
+      have hd : (y :: ys).dedup = y :: ys.dedup := by simp [hy]
+      rw [hd]
+      simp [dec_𝕆]
+      simp [dec_𝕆] at ih
+      rw [ih]
+
+/-- Splitting a typing context built from a list of variables and their types into its
+owned and borrowed parts. -/
+lemma typed_list_split (ys : List Var) (f : Var → LinType) :
+    (↑(ys.map (fun y => (y ∶ f y))) : Multiset TypedVar)
+      = (((ys.filter (fun y => f y = 𝕆) : List Var) : Multiset Var) {∶} 𝕆)
+        + (((ys.filter (fun y => f y = 𝔹) : List Var) : Multiset Var) {∶} 𝔹) := by
+  induction ys with
+  | nil => simp
+  | cons x xs ih =>
+    simp only [List.map_cons, List.filter_cons]
+    have h : f x = 𝕆 ∨ f x = 𝔹 := by cases f x <;> simp
+    have perm : ∀ (z : List Var) (g : Var → LinType),
+        (z.map (fun a => a ∶ g a)).Perm
+          ((z.filter (fun a => g a = 𝕆)).map (fun b => b ∶ 𝕆) ++ (z.filter (fun a => g a = 𝔹)).map (fun b => b ∶ 𝔹)) :=
+      fun z g => List.perm_iff_count.mpr
+        (List.recOn z (fun a => by simp)
+          fun c z ih a => by
+            simp only [List.count_cons, List.map_cons, List.filter_cons]
+            have h : g c = 𝕆 ∨ g c = 𝔹 := by cases g c <;> simp
+            rcases h with h | h
+            · simp [h, ih, List.count_cons]
+            · simp [h, ih, List.count_cons]; omega)
+    rcases h with h | h
+    · simp only [h, decide_true, ↓reduceIte]
+      simp [(perm xs f)]
+    · simp only [h, decide_true, ↓reduceIte]
+      have p := perm xs f
+      have q := p.cons (x ∶ 𝔹)
+      -- q : (x ∶ 𝔹) :: (xs.map ...).Perm (x ∶ 𝔹) :: ((xs.filter 𝕆).map 𝕆 ++ (xs.filter 𝔹).map 𝔹)
+      -- We need: _ .Perm (xs.filter 𝕆).map 𝕆 ++ (x ∶ 𝔹) :: (xs.filter 𝔹).map 𝔹
+      -- Use: (a :: (l1 ++ l2)).Perm = (l1 ++ (a :: l2)) via permutation
+      have r : ((x ∶ 𝔹) :: ((List.map (fun b => b ∶ 𝕆) (List.filter (fun a => decide (f a = 𝕆)) xs) ++
+          List.map (fun b => b ∶ 𝔹) (List.filter (fun a => decide (f a = 𝔹)) xs))) : List TypedVar).Perm
+          ((List.map (fun b => b ∶ 𝕆) (List.filter (fun a => decide (f a = 𝕆)) xs) ++
+          ((x ∶ 𝔹) :: List.map (fun b => b ∶ 𝔹) (List.filter (fun a => decide (f a = 𝔹)) xs)))) := by
+        -- Need to prove: (a :: (l1 ++ l2)).Perm (l1 ++ (a :: l2))
+        have perm_lemma : ∀ (a : TypedVar) (l1 l2 : List TypedVar),
+            (a :: (l1 ++ l2)).Perm (l1 ++ (a :: l2)) := by
+          intro a l1 l2
+          induction l1 with
+          | nil => simp [List.nil_append]
+          | cons c l1' ih =>
+            simp only [List.cons_append]
+            have swap : (a :: c :: (l1' ++ l2)).Perm (c :: a :: (l1' ++ l2)) :=
+              (List.Perm.swap a c (l1' ++ l2)).symm
+            exact swap.trans (List.Perm.cons c ih)
+        exact perm_lemma (x ∶ 𝔹) _ _
+      exact Multiset.coe_eq_coe.mpr (q.trans r)
+
+/-- The variables occurring at parameter positions of type `t` in the argument list
+`ys.map (fun y => (y, f y))`. -/
+lemma filter_map_args (ys : List Var) (f : Var → LinType) (t : LinType) :
+    (((ys.map (fun y => (y, f y))).filter (fun p => p.2 = t)).map Prod.fst)
+      = ys.filter (fun y => f y = t) := by
+  induction ys with
+  | nil => rfl
+  | cons y ys ih =>
+    simp only [List.map_cons, List.filter_cons]
+    split
+    · simp [ih]
+    · simp [ih]
+
+/-- The continuation of a `let`-bound application is typable in the context consisting of
+exactly the variables it needs: the freshly bound `z` together with the caller-owned
+variables that are free in it. -/
+lemma C_app_cont_typing {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {F : FnBody} {βₗ : Var → LinType} {y𝕆 y𝔹 S : Multiset Var}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (z_used : z ∈ fv_of_fn_body F)
+    (z_undef : z ∉ y𝕆.toFinset ∪ y𝔹.toFinset)
+    (F_wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ insert z (y𝕆.toFinset ∪ y𝔹.toFinset) ⊢ʷᶠᵇ F)
+    (hS_nodup : Multiset.Nodup S)
+    (hS_mem : ∀ w ∈ S, w = z ∨ w ∈ y𝕆)
+    (hS_fv : ∀ w ∈ S, w ∈ fv_of_fn_body F)
+    (hS_covers : ∀ w ∈ fv_of_fn_body F, w ∈ y𝕆 → w ∈ S)
+    (hz : z ∈ S) :
+    β; (S {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F (βₗ[z ↦ 𝕆]) ∷ 𝕆 := by
+  have hz𝕆 : ∀ w ∈ S, (βₗ[z ↦ 𝕆]) w = 𝕆 := by
+    intro w hw
+    rcases hS_mem w hw with rfl | hw𝕆
+    · simp
+    · have hwz : w ≠ z := by
+        rintro rfl
+        exact z_undef (Finset.mem_union_left _ (Multiset.mem_toFinset.mpr hw𝕆))
+      rw [Function.update_of_ne hwz]
+      exact y𝕆_𝕆 w hw𝕆
+  have hz𝔹 : ∀ w ∈ y𝔹, (βₗ[z ↦ 𝕆]) w = 𝔹 := by
+    intro w hw
+    have hwz : w ≠ z := by
+      rintro rfl
+      exact z_undef (Finset.mem_union_right _ (Multiset.mem_toFinset.mpr hw))
+    rw [Function.update_of_ne hwz]
+    exact y𝔹_𝔹 w hw
+  refine ih hS_nodup nd_y𝔹 _ hz𝕆 hz𝔹 (fun w hw => hS_fv w (Multiset.mem_toFinset.mp hw)) ?_
+  refine wf_FV_sandwich ?_ ?_ F_wf
+  · intro w hw
+    rcases Finset.mem_insert.mp (FV_sub_wf_context F_wf hw) with rfl | hmem'
+    · exact Finset.mem_union_left _ (Multiset.mem_toFinset.mpr hz)
+    · rcases Finset.mem_union.mp hmem' with h | h
+      · exact Finset.mem_union_left _
+          (Multiset.mem_toFinset.mpr (hS_covers w hw (Multiset.mem_toFinset.mp h)))
+      · exact Finset.mem_union_right _ h
+  · intro w hw
+    rcases Finset.mem_union.mp hw with h | h
+    · rcases hS_mem w (Multiset.mem_toFinset.mp h) with rfl | h'
+      · exact Finset.mem_insert_self _ _
+      · exact Finset.mem_insert_of_mem (Finset.mem_union_left _ (Multiset.mem_toFinset.mpr h'))
+    · exact Finset.mem_insert_of_mem (Finset.mem_union_right _ h)
+
+/-- Typing of the body of a translated `let`-bound application: the translated
+continuation, decorated with the `dec`s inserted for the borrowed parameter positions
+(recorded in `D`). -/
+lemma C_app_dec_typing {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {F : FnBody} {βₗ : Var → LinType} {y𝕆 y𝔹 surv : Multiset Var} {D : List Var}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (z_used : z ∈ fv_of_fn_body F)
+    (z_undef : z ∉ y𝕆.toFinset ∪ y𝔹.toFinset)
+    (F_wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ insert z (y𝕆.toFinset ∪ y𝔹.toFinset) ⊢ʷᶠᵇ F)
+    (surv_le : surv ≤ y𝕆)
+    (surv_fv : ∀ y ∈ surv, y ∈ fv_of_fn_body (dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ))
+    (D_mem : ∀ w ∈ D, (βₗ w = 𝕆 → w ∈ surv) ∧ (βₗ w = 𝔹 → w ∈ y𝔹))
+    (surv_covers : ∀ w ∈ fv_of_fn_body F, w ∈ y𝕆 → w ∈ surv) :
+    β; ((z ::ₘ surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ ∷ 𝕆 := by
+  have z_not_in_D : z ∉ D := by
+    intro hzD
+    rcases D_mem z hzD with ⟨hO, hB⟩
+    by_cases hβz : βₗ z = 𝕆
+    · have hz_y𝕆 : z ∈ y𝕆 := Multiset.mem_of_le surv_le (hO hβz)
+      exact z_undef (Finset.mem_union_left _ (Multiset.mem_toFinset.mpr hz_y𝕆))
+    · have hβz_𝔹 : βₗ z = 𝔹 := not_𝕆_iff_𝔹.mp hβz
+      exact z_undef (Finset.mem_union_right _ (Multiset.mem_toFinset.mpr (hB hβz_𝔹)))
+  have dec_𝕆_var_eq : ∀ x F βₗ₁ βₗ₂, βₗ₁ x = βₗ₂ x → dec_𝕆_var x F βₗ₁ = dec_𝕆_var x F βₗ₂ := by
+    intro x F βₗ₁ βₗ₂ h
+    simp [dec_𝕆_var, h]
+  have heq : dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ = dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) (βₗ[z ↦ 𝕆]) := by
+    have hagree : ∀ w ∈ D, βₗ w = (βₗ[z ↦ 𝕆]) w := by
+      intro w hw
+      rw [Function.update_of_ne]
+      exact fun h => z_not_in_D (h ▸ hw)
+    have heq_aux : ∀ l : List Var, ∀ βₗ₁ βₗ₂ : Var → LinType, (∀ w ∈ l, βₗ₁ w = βₗ₂ w) →
+        dec_𝕆 l (C β F (βₗ[z ↦ 𝕆])) βₗ₁ = dec_𝕆 l (C β F (βₗ[z ↦ 𝕆])) βₗ₂ := by
+      intro l
+      induction l with
+      | nil => simp [dec_𝕆]
+      | cons x xs ih =>
+        intro βₗ₁ βₗ₂ hagree'
+        simp only [dec_𝕆, List.foldr_cons]
+        have hfolds : List.foldr (fun x acc => dec_𝕆_var x acc βₗ₁) (C β F (βₗ[z ↦ 𝕆])) xs =
+            List.foldr (fun x acc => dec_𝕆_var x acc βₗ₂) (C β F (βₗ[z ↦ 𝕆])) xs := by
+          calc List.foldr (fun x acc => dec_𝕆_var x acc βₗ₁) (C β F (βₗ[z ↦ 𝕆])) xs
+              = dec_𝕆 xs (C β F (βₗ[z ↦ 𝕆])) βₗ₁ := rfl
+            _ = dec_𝕆 xs (C β F (βₗ[z ↦ 𝕆])) βₗ₂ := ih _ _ (fun w hw => hagree' w (List.mem_cons_of_mem _ hw))
+            _ = List.foldr (fun x acc => dec_𝕆_var x acc βₗ₂) (C β F (βₗ[z ↦ 𝕆])) xs := rfl
+        rw [hfolds]
+        apply dec_𝕆_var_eq
+        exact hagree' x (by simp)
+    exact heq_aux D _ _ hagree
+  rw [heq, dec_𝕆_dedup]
+  have surv_nodup : surv.Nodup := Multiset.nodup_of_le surv_le nd_y𝕆
+  have z_not_in_surv : z ∉ surv := fun h =>
+    z_undef (Finset.mem_union_left _ (Multiset.mem_toFinset.mpr (Multiset.mem_of_le surv_le h)))
+  have surv_y𝕆_nodup : (z ::ₘ surv).Nodup := Multiset.nodup_cons.mpr ⟨z_not_in_surv, surv_nodup⟩
+  have h_ys_sub_vars : (D.dedup : Multiset Var) ⊆ (z ::ₘ surv) + y𝔹 := by
+    intro w hw
+    have hwD : w ∈ D := by simpa [Multiset.mem_dedup] using hw
+    rcases D_mem w hwD with ⟨hO, hB⟩
+    have hτ : βₗ w = 𝕆 ∨ βₗ w = 𝔹 := by cases βₗ w <;> simp
+    rcases hτ with h | h
+    · have : w ∈ surv := hO h
+      simp [this]
+    · have : w ∈ y𝔹 := hB h
+      simp [this]
+  have goal : β; ((z ::ₘ surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ dec_𝕆 D.dedup (C β F (βₗ[z ↦ 𝕆])) (βₗ[z ↦ 𝕆]) ∷ 𝕆 := by
+    have h_upd_O : ∀ y ∈ z ::ₘ surv, (βₗ[z ↦ 𝕆]) y = 𝕆 := by
+      intro y hy
+      by_cases hyz : y = z
+      · subst hyz; exact Function.update_self _ _ _
+      · have hy_surv : y ∈ surv := by simpa [hyz] using hy
+        have hy_y𝕆 : y ∈ y𝕆 := by
+          have hle := Multiset.le_iff_count.mp surv_le y
+          exact Multiset.count_pos.mp (Nat.lt_of_lt_of_le (Multiset.count_pos.mpr hy_surv) hle)
+        rw [Function.update_of_ne hyz]
+        exact y𝕆_𝕆 y hy_y𝕆
+    have h_upd_B : ∀ y ∈ y𝔹, (βₗ[z ↦ 𝕆]) y = 𝔹 := by
+      intro y hy
+      by_cases hyz : y = z
+      · subst hyz; exact (z_undef (Finset.mem_union_right _ (Multiset.mem_toFinset.mpr hy))).elim
+      · rw [Function.update_of_ne hyz]
+        exact y𝔹_𝔹 y hy
+    refine @inductive_dec' β D.dedup (z ::ₘ surv) y𝔹 (C β F (βₗ[z ↦ 𝕆])) (βₗ[z ↦ 𝕆]) h_ys_sub_vars (List.nodup_dedup _) h_upd_O h_upd_B surv_y𝕆_nodup nd_y𝔹 ?_
+    apply ih
+    · exact Multiset.Nodup.filter _ surv_y𝕆_nodup
+    · exact nd_y𝔹
+    · -- All filtered elements have type 𝕆
+      intro y hy
+      have hy_mem : y ∈ z ::ₘ surv := Multiset.mem_filter.mp hy |>.1
+      exact h_upd_O y hy_mem
+    · -- All y𝔹 elements have type 𝔹
+      intro y hy
+      exact h_upd_B y hy
+    · -- Filter subset of fv_of_fn_body
+      intro y hy
+      rw [Multiset.mem_toFinset] at hy
+      have hy_mem : y ∈ z ::ₘ surv := Multiset.mem_filter.mp hy |>.1
+      have hy_pred : y ∉ D.dedup ∨ y ∈ fv_of_fn_body (C β F (βₗ[z ↦ 𝕆])) := Multiset.mem_filter.mp hy |>.2
+      rw [Multiset.mem_cons] at hy_mem
+      rcases hy_mem with rfl | hy_surv
+      · exact z_used
+      · -- y ∈ surv, use surv_fv
+        have hy_dec := surv_fv y hy_surv
+        rw [heq] at hy_dec
+        rw [FV_dec_𝕆_filter] at hy_dec
+        rw [Finset.mem_union] at hy_dec
+        rcases hy_dec with hy_dedup | hy_F
+        · -- hy_dedup means y ∈ {y ∈ D.toFinset | ... ∧ y ∉ fv_of_fn_body ...}
+          -- But filter requires y ∉ D.dedup ∨ y ∈ fv_of_fn_body, so y ∈ D.dedup implies y ∈ fv_of_fn_body
+          -- This is a contradiction
+          simp only [Finset.mem_filter] at hy_dedup
+          have hy_not_FV := hy_dedup.2.2
+          have hy_in_D := hy_dedup.1
+          have hy_in_D' : y ∈ D := Multiset.mem_toFinset.mp hy_in_D
+          have hy_in_dedup : y ∈ D.dedup := List.mem_dedup.mpr hy_in_D'
+          simp [hy_in_dedup, hy_not_FV] at hy_pred
+        · rw [FV_C_eq_FV] at hy_F
+          exact hy_F
+    · -- WF condition
+      -- Need to show: filter ⊆ insert z (y𝕆 ∪ y𝔹)
+      have hfilter_sub : (Multiset.filter (fun y => y ∉ D.dedup ∨ y ∈ fv_of_fn_body (C β F (βₗ[z ↦ 𝕆]))) (z ::ₘ surv)).toFinset ⊆ insert z (y𝕆.toFinset ∪ y𝔹.toFinset) := by
+        intro y hy
+        rw [Multiset.mem_toFinset] at hy
+        have hy_mem : y ∈ z ::ₘ surv := Multiset.mem_filter.mp hy |>.1
+        rw [Multiset.mem_cons] at hy_mem
+        rcases hy_mem with rfl | hy_surv
+        · exact Finset.mem_insert_self _ _
+        · -- y ∈ surv, and surv ≤ y𝕆
+          have hy_y𝕆 : y ∈ y𝕆 := by
+            have hle := Multiset.le_iff_count.mp surv_le y
+            exact Multiset.count_pos.mp (Nat.lt_of_lt_of_le (Multiset.count_pos.mpr hy_surv) hle)
+          exact Finset.mem_insert_of_mem (Finset.mem_union_left _ (Multiset.mem_toFinset.mpr hy_y𝕆))
+      have hy𝔹_sub : y𝔹.toFinset ⊆ insert (z : Var) (y𝕆.toFinset ∪ y𝔹.toFinset) := by
+        calc y𝔹.toFinset ⊆ y𝕆.toFinset ∪ y𝔹.toFinset := Finset.subset_union_right
+          _ ⊆ insert (z : Var) (y𝕆.toFinset ∪ y𝔹.toFinset) := Finset.subset_insert _ _
+      have hunion_sub : (Multiset.filter (fun y => y ∉ D.dedup ∨ y ∈ fv_of_fn_body (C β F (βₗ[z ↦ 𝕆]))) (z ::ₘ surv)).toFinset ∪ y𝔹.toFinset ⊆ insert z (y𝕆.toFinset ∪ y𝔹.toFinset) := by
+        exact Finset.union_subset hfilter_sub hy𝔹_sub
+      apply wf_FV_sandwich _ hunion_sub F_wf
+      · -- fv_of_fn_body F ⊆ filter.toFinset ∪ y𝔹.toFinset
+        have hFV_sub := FV_sub_wf_context F_wf
+        intro y hy
+        rw [Finset.mem_union]
+        have hy_ctx := hFV_sub hy
+        rw [Finset.mem_insert] at hy_ctx
+        rcases hy_ctx with rfl | hy_ctx
+        · -- y = z
+          left
+          rw [Multiset.mem_toFinset]
+          apply Multiset.mem_filter.mpr
+          exact ⟨Multiset.mem_cons_self y surv, by
+            rw [FV_C_eq_FV]
+            exact Or.inr hy⟩
+        · rcases Finset.mem_union.mp hy_ctx with hy_y𝕆 | hy_y𝔹
+          · -- y ∈ y𝕆
+            left
+            rw [Multiset.mem_toFinset]
+            have hy_y𝕆' : y ∈ y𝕆 := Multiset.mem_toFinset.mp hy_y𝕆
+            have hy_surv : y ∈ surv := surv_covers y hy hy_y𝕆'
+            apply Multiset.mem_filter.mpr
+            constructor
+            · exact Multiset.mem_cons_of_mem hy_surv
+            · -- y ∉ D.dedup ∨ y ∈ fv_of_fn_body (C β F (βₗ[z ↦ 𝕆]))
+              by_contra h_not
+              push_neg at h_not
+              obtain ⟨hy_dedup, hy_not_FV⟩ := h_not
+              rw [FV_C_eq_FV] at hy_not_FV
+              exact hy_not_FV hy
+          · -- y ∈ y𝔹
+            right
+            exact Multiset.mem_toFinset.mpr (Multiset.mem_toFinset.mp hy_y𝔹)
+  exact goal
+
+/-- The `Linear.let` step for a translated application: `Oall` lists the owned parameter
+positions (whose copies have been secured by the `inc`s emitted in front), `Ball` the
+borrowed parameter positions, and `surv` the caller-owned variables handed on to the
+continuation. -/
+lemma C_app_let_step {β : Const → Var → LinType}
+    {z : Var} {e : Expr} {F₂ : FnBody} {βₗ : Var → LinType}
+    {Oall surv y𝔹 : Multiset Var} {Ball : List Var}
+    (e_typed : β; (Oall {∶} 𝕆) + (((Ball : List Var) : Multiset Var) {∶} 𝔹) ⊩ ↑e ∷ 𝕆)
+    (Ball_𝔹 : ∀ y ∈ Ball, βₗ y = 𝔹 → y ∈ y𝔹)
+    (Ball_𝕆 : ∀ y ∈ Ball, βₗ y = 𝕆 → y ∈ surv)
+    (F₂_typed : β; ((z ::ₘ surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ F₂ ∷ 𝕆) :
+    β; ((Oall + surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ (z ≔ᶠᵇ e;ᶠᵇ F₂) ∷ 𝕆 := by
+  have hBBmem : ∀ w ∈ Ball.filter (fun y => βₗ y = 𝔹), w ∈ y𝔹 := by
+    intro w hw
+    exact Ball_𝔹 w (List.mem_of_mem_filter hw) (by simpa using List.of_mem_filter hw)
+  have hBOmem : ∀ w ∈ Ball.filter (fun y => βₗ y = 𝕆), w ∈ surv := by
+    intro w hw
+    exact Ball_𝕆 w (List.mem_of_mem_filter hw) (by simpa using List.of_mem_filter hw)
+  have hBall : ((Ball.filter (fun y => βₗ y = 𝔹) : List Var) : Multiset Var)
+      + ((Ball.filter (fun y => βₗ y = 𝕆) : List Var) : Multiset Var)
+      = ((Ball : List Var) : Multiset Var) := by
+    rw [← Multiset.filter_coe, ← Multiset.filter_coe]
+    have hcongr : Multiset.filter (fun y => βₗ y = 𝕆) (Ball : Multiset Var)
+        = Multiset.filter (fun y => ¬ βₗ y = 𝔹) (Ball : Multiset Var) := by
+      refine Multiset.filter_congr ?_
+      intro y _
+      constructor
+      · intro h; rw [h]; decide
+      · intro h; exact not_𝔹_iff_𝕆.mp h
+    rw [hcongr]
+    exact Multiset.filter_add_not _ _
+  refine inductive_contract
+    (ys := ((Ball.filter (fun y => βₗ y = 𝔹) : List Var) : Multiset Var)) ?_ ?_
+  · intro w hw
+    exact Multiset.mem_add.mpr (Or.inr (Multiset.mem_map_of_mem _ (hBBmem w (by simpa using hw))))
+  · have hsplit : (((Oall + surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹))
+        + (((Ball.filter (fun y => βₗ y = 𝔹) : List Var) : Multiset Var) {∶} 𝔹)
+        = ((Oall {∶} 𝕆)
+            + (((Ball.filter (fun y => βₗ y = 𝔹) : List Var) : Multiset Var) {∶} 𝔹))
+          + ((surv {∶} 𝕆) + (y𝔹 {∶} 𝔹)) := by
+      simp only [Multiset.map_add]
+      simp [add_comm, add_left_comm, add_assoc]
+    rw [hsplit]
+    refine Linear.let (xs := Ball.filter (fun y => βₗ y = 𝕆)) ?_ ?_ ?_
+    · intro tv htv
+      simp only [Multiset.mem_coe, List.mem_map] at htv
+      obtain ⟨w, hw, rfl⟩ := htv
+      exact Multiset.mem_add.mpr (Or.inl (Multiset.mem_map_of_mem _ (hBOmem w hw)))
+    · have hmap : (((Ball.filter (fun y => βₗ y = 𝔹) : List Var) : Multiset Var) {∶} 𝔹)
+          + ((Ball.filter (fun y => βₗ y = 𝕆) : List Var) [∶] 𝔹)
+          = (((Ball : List Var) : Multiset Var) {∶} 𝔹) := by
+        rw [← hBall, Multiset.map_add]
+        rfl
+      rw [add_assoc, hmap]
+      exact e_typed
+    · have hcons : (z ∶ 𝕆) ::ₘ ((surv {∶} 𝕆) + (y𝔹 {∶} 𝔹))
+          = ((z ::ₘ surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹) := by
+        simp [Multiset.map_cons, Multiset.cons_add]
+      rw [hcons]
+      exact F₂_typed
+
+
+/-- The final step of the translation of a `let`-bound application: all arguments have
+been processed, `D` records the variables for which a `dec` has been inserted into the
+body, `Oall` the owned parameter positions and `Ball` the borrowed parameter positions,
+and `surv` the variables owned by the caller that survive into the continuation. -/
+lemma C_app_base {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {e : Expr} {F : FnBody} {βₗ : Var → LinType}
+    {y𝕆 y𝔹 Oall surv : Multiset Var} {Ball D : List Var}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (z_used : z ∈ fv_of_fn_body F)
+    (z_undef : z ∉ y𝕆.toFinset ∪ y𝔹.toFinset)
+    (F_wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ insert z (y𝕆.toFinset ∪ y𝔹.toFinset) ⊢ʷᶠᵇ F)
+    (e_typed : β; (Oall {∶} 𝕆) + (((Ball : List Var) : Multiset Var) {∶} 𝔹) ⊩ ↑e ∷ 𝕆)
+    (Ball_mem : ∀ y ∈ Ball, (βₗ y = 𝕆 → y ∈ y𝕆) ∧ (βₗ y = 𝔹 → y ∈ y𝔹))
+    (surv_le : surv ≤ y𝕆)
+    (surv_fv : ∀ y ∈ surv, y ∈ fv_of_fn_body (dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ))
+    (D_mem : ∀ w ∈ D, (βₗ w = 𝕆 → w ∈ surv) ∧ (βₗ w = 𝔹 → w ∈ y𝔹))
+    (Ball_D : ∀ y ∈ Ball, y ∈ D)
+    (surv_covers : ∀ w ∈ fv_of_fn_body F, w ∈ y𝕆 → w ∈ surv) :
+    β; ((Oall + surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩
+      (z ≔ᶠᵇ e;ᶠᵇ dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ) ∷ 𝕆 := by
+  refine C_app_let_step (Ball := Ball) (βₗ := βₗ) e_typed ?_ ?_ ?_
+  · exact fun y hy hb => (Ball_mem y hy).2 hb
+  · exact fun y hy ho => (D_mem y (Ball_D y hy)).1 ho
+  · exact C_app_dec_typing ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 z_used z_undef F_wf surv_le surv_fv
+      D_mem surv_covers
+
+/-- `dec_𝕆_var` never removes free variables. -/
+lemma FV_sub_FV_dec_𝕆_var (y : Var) (G : FnBody) (βₗ : Var → LinType) :
+    fv_of_fn_body G ⊆ fv_of_fn_body (dec_𝕆_var y G βₗ) := by
+  unfold dec_𝕆_var
+  split <;> simp [fv_of_fn_body]
+
+/-- An owned variable is free in the body it is `dec`orated with. -/
+lemma mem_FV_dec_𝕆_var {y : Var} (G : FnBody) {βₗ : Var → LinType} (h : βₗ y = 𝕆) :
+    y ∈ fv_of_fn_body (dec_𝕆_var y G βₗ) := by
+  by_cases hy : y ∈ fv_of_fn_body G
+  · rw [dec_𝕆_var, if_neg (fun hp => hp.2 hy)]
+    exact hy
+  · rw [dec_𝕆_var, if_pos (And.intro h hy)]
+    simp [fv_of_fn_body]
+
+/-- A variable of the ambient context belongs to the owned or to the borrowed part
+according to its type. -/
+lemma mem_split_of_mem_union {βₗ : Var → LinType} {y𝕆 y𝔹 : Multiset Var} {w : Var}
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (hw : w ∈ y𝕆.toFinset ∪ y𝔹.toFinset) :
+    (βₗ w = 𝕆 → w ∈ y𝕆) ∧ (βₗ w = 𝔹 → w ∈ y𝔹) := by
+  rcases Finset.mem_union.mp hw with hw𝕆 | hw𝔹
+  · exact ⟨fun _ => Multiset.mem_toFinset.mp hw𝕆, fun h => by simp_all⟩
+  · exact ⟨fun h => by simp_all, fun _ => Multiset.mem_toFinset.mp hw𝔹⟩
+
+/-- The induction over the argument list of a `let`-bound application. `pre` collects the
+owned copies already secured for the arguments processed so far, `surv` the variables
+owned by the caller that are still available, and `D` the variables for which a `dec` has
+already been inserted into the body. -/
+lemma C_app_gen {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {e : Expr} {F : FnBody} {βₗ : Var → LinType}
+    {y𝕆 y𝔹 Oall : Multiset Var} {Ball : List Var}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (z_used : z ∈ fv_of_fn_body F)
+    (z_undef : z ∉ y𝕆.toFinset ∪ y𝔹.toFinset)
+    (F_wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ insert z (y𝕆.toFinset ∪ y𝔹.toFinset) ⊢ʷᶠᵇ F)
+    (e_typed : β; (Oall {∶} 𝕆) + (((Ball : List Var) : Multiset Var) {∶} 𝔹) ⊩ ↑e ∷ 𝕆)
+    (Ball_mem : ∀ y ∈ Ball, (βₗ y = 𝕆 → y ∈ y𝕆) ∧ (βₗ y = 𝔹 → y ∈ y𝔹)) :
+    ∀ (args : List (Var × LinType)) (D : List Var) (pre surv : Multiset Var),
+      pre + (((args.filter (fun p => p.2 = 𝕆)).map Prod.fst : List Var) : Multiset Var) = Oall →
+      surv ≤ y𝕆 →
+      (∀ y ∈ surv,
+        y ∈ fv_of_fn_body (dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ) ∨ y ∈ args.map Prod.fst) →
+      (∀ p ∈ args, (βₗ p.1 = 𝕆 → p.1 ∈ surv) ∧ (βₗ p.1 = 𝔹 → p.1 ∈ y𝔹)) →
+      (∀ w ∈ D, (βₗ w = 𝕆 → w ∈ surv) ∧ (βₗ w = 𝔹 → w ∈ y𝔹)) →
+      (∀ y ∈ Ball, y ∈ D ∨ (y, 𝔹) ∈ args) →
+      (∀ w ∈ fv_of_fn_body F, w ∈ y𝕆 → w ∈ surv) →
+      β; ((pre + surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩
+        C_app args (z ≔ᶠᵇ e;ᶠᵇ dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ) βₗ ∷ 𝕆 := by
+  intro args
+  induction args with
   | nil =>
-    simp_all only [List.map_nil, Multiset.coe_nil]
-    sorry
-  | cons yτ xs ih_Γ =>
-    unfold C_app
-    split_ifs with ht
-    · unfold inc_𝕆_var
-      split_ifs with hinc
-      · simp_all only [List.map_cons, Finset.mem_union, List.mem_toFinset, List.mem_map, Prod.exists, exists_and_right,
-          exists_eq_right, not_or, not_exists, implies_true]
-        obtain ⟨fst, snd⟩ := yτ
-        obtain ⟨left, right⟩ := hinc
-        obtain ⟨left_1, right⟩ := right
-        subst ht
-        simp_all only [implies_true]
-        sorry
-      · simp_all only [List.map_cons, Finset.mem_union, List.mem_toFinset, List.mem_map, Prod.exists, exists_and_right,
-          exists_eq_right, not_or, not_exists, not_and, Decidable.not_not]
-        obtain ⟨fst, snd⟩ := yτ
-        subst ht
-        simp_all only
-        sorry
-    · simp_all only [List.map_cons]
-      obtain ⟨fst, snd⟩ := yτ
-      simp_all only
-      sorry
+    intro D pre surv h_pre h_surv_le h_surv_used h_args_mem h_D h_Ball h_surv_covers
+    simp only [List.filter_nil, List.map_nil, Multiset.coe_nil, add_zero] at h_pre
+    subst h_pre
+    simp only [C_app]
+    refine C_app_base ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 z_used z_undef F_wf e_typed Ball_mem
+      h_surv_le ?_ h_D ?_ h_surv_covers
+    · intro y hy
+      rcases h_surv_used y hy with h | h
+      · exact h
+      · simp at h
+    · intro y hy
+      rcases h_Ball y hy with h | h
+      · exact h
+      · simp at h
+  | cons p rest ih_args =>
+    intro D pre surv h_pre h_surv_le h_surv_used h_args_mem h_D h_Ball h_surv_covers
+    obtain ⟨y, t⟩ := p
+    have nd_surv : Multiset.Nodup surv := Multiset.nodup_of_le h_surv_le nd_y𝕆
+    have hFVsub : fv_of_fn_body (C β F (βₗ[z ↦ 𝕆]))
+        ⊆ fv_of_fn_body (dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ) := FV_sub_FV_dec_𝕆 _ _ _
+    have hFVC : fv_of_fn_body (C β F (βₗ[z ↦ 𝕆])) = fv_of_fn_body F := FV_C_eq_FV _ _ _
+    cases t with
+    | 𝕆 =>
+      have hmem_y : ((y, 𝕆) : Var × LinType) ∈ ((y, 𝕆) :: rest : List (Var × LinType)) :=
+        List.mem_cons_self ..
+      have h_pre' : (y ::ₘ pre)
+          + (((rest.filter (fun p => p.2 = 𝕆)).map Prod.fst : List Var) : Multiset Var) = Oall := by
+        rw [← h_pre]
+        simp only [List.filter_cons, decide_true, if_true, List.map_cons]
+        rw [← Multiset.cons_coe, Multiset.add_cons, Multiset.cons_add]
+      simp only [C_app, if_true, inc_𝕆_var]
+      split_ifs
+      · rename_i hcond
+        obtain ⟨hy𝕆, hyV⟩ := hcond
+        simp only [Finset.mem_union, List.mem_toFinset, not_or] at hyV
+        obtain ⟨hy_rest, hy_body⟩ := hyV
+        have hy_surv : y ∈ surv := (h_args_mem _ hmem_y).1 hy𝕆
+        have hyD : y ∉ D := fun hD => hy_body (vars_sub_FV_dec_𝕆 D _ βₗ y hD hy𝕆)
+        have hyF : y ∉ fv_of_fn_body F := fun hF => hy_body (hFVsub (hFVC ▸ hF))
+        have hctx : pre + surv = (y ::ₘ pre) + surv.erase y := by
+          conv_lhs => rw [← Multiset.cons_erase hy_surv]
+          simp [Multiset.add_cons, Multiset.cons_add]
+        rw [hctx]
+        refine ih_args D (y ::ₘ pre) (surv.erase y) h_pre'
+          ((Multiset.erase_le _ _).trans h_surv_le) ?_ ?_ ?_ ?_ ?_
+        · intro w hw
+          have hwne : w ≠ y := fun h => nd_surv.notMem_erase (h ▸ hw)
+          rcases h_surv_used w (Multiset.mem_of_mem_erase hw) with h | h
+          · exact Or.inl h
+          · simp only [List.map_cons, List.mem_cons] at h
+            rcases h with rfl | h
+            · exact absurd rfl hwne
+            · exact Or.inr h
+        · intro q hq
+          refine ⟨fun hq𝕆 => ?_, (h_args_mem q (List.mem_cons_of_mem _ hq)).2⟩
+          have hqne : q.1 ≠ y := fun h => hy_rest (h ▸ List.mem_map_of_mem hq)
+          exact Multiset.mem_erase_of_ne hqne |>.mpr ((h_args_mem q (List.mem_cons_of_mem _ hq)).1 hq𝕆)
+        · intro w hw
+          refine ⟨fun hw𝕆 => ?_, (h_D w hw).2⟩
+          have hwne : w ≠ y := fun h => hyD (h ▸ hw)
+          exact Multiset.mem_erase_of_ne hwne |>.mpr ((h_D w hw).1 hw𝕆)
+        · intro w hw
+          rcases h_Ball w hw with h | h
+          · exact Or.inl h
+          · rcases List.mem_cons.mp h with h | h
+            · exact absurd (congrArg Prod.snd h) (by simp)
+            · exact Or.inr h
+        · intro w hwF hw𝕆
+          have hwne : w ≠ y := fun h => hyF (h ▸ hwF)
+          exact Multiset.mem_erase_of_ne hwne |>.mpr (h_surv_covers w hwF hw𝕆)
+      · rename_i hcond
+        have hctx : ((y ∶ 𝕆) ::ₘ (((pre + surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹)))
+            = ((((y ::ₘ pre) + surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹)) := by
+          simp [Multiset.cons_add, Multiset.map_cons]
+        have key : β; ((y ∶ 𝕆) ::ₘ (((pre + surv) {∶} 𝕆) + (y𝔹 {∶} 𝔹))) ⊩
+            C_app rest (z ≔ᶠᵇ e;ᶠᵇ dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ) βₗ ∷ 𝕆 := by
+          rw [hctx]
+          refine ih_args D (y ::ₘ pre) surv h_pre' h_surv_le ?_ ?_ h_D ?_ h_surv_covers
+          · intro w hw
+            rcases h_surv_used w hw with h | h
+            · exact Or.inl h
+            · simp only [List.map_cons, List.mem_cons] at h
+              rcases h with rfl | h
+              · have hw𝕆 : βₗ w = 𝕆 := y𝕆_𝕆 w (Multiset.mem_of_le h_surv_le hw)
+                push_neg at hcond
+                rcases Finset.mem_union.mp (hcond hw𝕆) with h' | h'
+                · exact Or.inr (List.mem_toFinset.mp h')
+                · exact Or.inl h'
+              · exact Or.inr h
+          · exact fun q hq => h_args_mem q (List.mem_cons_of_mem _ hq)
+          · intro w hw
+            rcases h_Ball w hw with h | h
+            · exact Or.inl h
+            · rcases List.mem_cons.mp h with h | h
+              · exact absurd (congrArg Prod.snd h) (by simp)
+              · exact Or.inr h
+        cases hβy : βₗ y with
+        | 𝕆 =>
+          have hy : y ∈ surv := (h_args_mem _ hmem_y).1 hβy
+          exact Linear.inc_𝕆 (Multiset.mem_add.mpr (Or.inl
+            (Multiset.mem_map_of_mem _ (Multiset.mem_add.mpr (Or.inr hy))))) key
+        | 𝔹 =>
+          have hy : y ∈ y𝔹 := (h_args_mem _ hmem_y).2 hβy
+          exact Linear.inc_𝔹 (Multiset.mem_add.mpr (Or.inr
+            (Multiset.mem_map_of_mem _ hy))) key
+    | 𝔹 =>
+      have hmem_y : ((y, 𝔹) : Var × LinType) ∈ ((y, 𝔹) :: rest : List (Var × LinType)) :=
+        List.mem_cons_self ..
+      have h_pre' : pre
+          + (((rest.filter (fun p => p.2 = 𝕆)).map Prod.fst : List Var) : Multiset Var) = Oall := by
+        rw [← h_pre]
+        simp
+      have hstep : dec_𝕆_var y (dec_𝕆 D (C β F (βₗ[z ↦ 𝕆])) βₗ) βₗ
+          = dec_𝕆 (y :: D) (C β F (βₗ[z ↦ 𝕆])) βₗ := rfl
+      simp only [C_app, if_neg (by decide : ¬((𝔹 : LinType) = 𝕆)), hstep]
+      refine ih_args (y :: D) pre surv h_pre' h_surv_le ?_ ?_ ?_ ?_ h_surv_covers
+      · intro w hw
+        rcases h_surv_used w hw with h | h
+        · exact Or.inl (FV_sub_FV_dec_𝕆_var y _ βₗ h)
+        · simp only [List.map_cons, List.mem_cons] at h
+          rcases h with rfl | h
+          · have hw𝕆 : βₗ w = 𝕆 := y𝕆_𝕆 w (Multiset.mem_of_le h_surv_le hw)
+            exact Or.inl (mem_FV_dec_𝕆_var _ hw𝕆)
+          · exact Or.inr h
+      · exact fun q hq => h_args_mem q (List.mem_cons_of_mem _ hq)
+      · intro w hw
+        rcases List.mem_cons.mp hw with rfl | hw
+        · exact ⟨(h_args_mem _ hmem_y).1, (h_args_mem _ hmem_y).2⟩
+        · exact h_D w hw
+      · intro w hw
+        rcases h_Ball w hw with h | h
+        · exact Or.inl (List.mem_cons_of_mem _ h)
+        · rcases List.mem_cons.mp h with h | h
+          · have hwy : w = y := congrArg Prod.fst h
+            exact Or.inl (hwy ▸ List.mem_cons_self ..)
+          · exact Or.inr h
+
+/-- Typing of the translation of a `let`-bound application, for an arbitrary expression
+`e` whose free variables are exactly the variables of the argument list `args`. -/
+lemma C_app_main {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {e : Expr} {F : FnBody} {βₗ : Var → LinType}
+    {y𝕆 y𝔹 : Multiset Var} {args : List (Var × LinType)}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (z ≔ᶠᵇ e;ᶠᵇ F))
+    (z_used : z ∈ fv_of_fn_body F)
+    (z_undef : z ∉ y𝕆.toFinset ∪ y𝔹.toFinset)
+    (F_wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ insert z (y𝕆.toFinset ∪ y𝔹.toFinset) ⊢ʷᶠᵇ F)
+    (e_fv_sub : ∀ w ∈ fv_of_expr e, w ∈ y𝕆.toFinset ∪ y𝔹.toFinset)
+    (args_fv : ∀ p ∈ args, p.1 ∈ fv_of_expr e)
+    (fv_args : ∀ w ∈ fv_of_expr e, w ∈ args.map Prod.fst)
+    (e_typed : β;
+      ((((args.filter (fun p => p.2 = 𝕆)).map Prod.fst : List Var) : Multiset Var) {∶} 𝕆)
+      + ((((args.filter (fun p => p.2 = 𝔹)).map Prod.fst : List Var) : Multiset Var) {∶} 𝔹)
+      ⊩ ↑e ∷ 𝕆) :
+    β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩
+      C_app args (z ≔ᶠᵇ e;ᶠᵇ C β F (βₗ[z ↦ 𝕆])) βₗ ∷ 𝕆 := by
+  have hBall : ∀ y ∈ (args.filter (fun p => p.2 = 𝔹)).map Prod.fst,
+      (βₗ y = 𝕆 → y ∈ y𝕆) ∧ (βₗ y = 𝔹 → y ∈ y𝔹) := by
+    intro w hw
+    simp only [List.mem_map, List.mem_filter] at hw
+    obtain ⟨q, ⟨hq, _⟩, rfl⟩ := hw
+    exact mem_split_of_mem_union y𝕆_𝕆 y𝔹_𝔹 (e_fv_sub _ (args_fv q hq))
+  have h := C_app_gen (β := β) (δ := δ) (z := z) (e := e) (F := F) (βₗ := βₗ)
+    (y𝕆 := y𝕆) (y𝔹 := y𝔹)
+    (Oall := (((args.filter (fun p => p.2 = 𝕆)).map Prod.fst : List Var) : Multiset Var))
+    (Ball := (args.filter (fun p => p.2 = 𝔹)).map Prod.fst)
+    ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 z_used z_undef F_wf e_typed hBall
+    args [] 0 y𝕆 (by simp) le_rfl ?_ ?_ (by simp) ?_ (fun _ _ h => h)
+  · simpa only [dec_𝕆, List.foldr_nil, zero_add] using h
+  · intro w hw
+    simp only [dec_𝕆, List.foldr_nil, FV_C_eq_FV]
+    have := y𝕆_sub_FV (Multiset.mem_toFinset.mpr hw)
+    simp only [fv_of_fn_body, Finset.mem_union, Finset.mem_erase] at this
+    rcases this with h' | ⟨_, h'⟩
+    · exact Or.inr (fv_args w h')
+    · exact Or.inl h'
+  · intro q hq
+    exact mem_split_of_mem_union y𝕆_𝕆 y𝔹_𝔹 (e_fv_sub _ (args_fv q hq))
+  · intro w hw
+    simp only [List.mem_map, List.mem_filter] at hw
+    obtain ⟨q, ⟨hq, hq𝔹⟩, rfl⟩ := hw
+    right
+    have hq' : q = (q.1, 𝔹) := by
+      obtain ⟨a, b⟩ := q
+      simp_all
+    exact hq' ▸ hq
+
+
+end CAppGeneral
+
+
+lemma rc_let_const_app_full_aux {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {F : FnBody} {c : Const} {ys : List Var}
+    {y𝕆 y𝔹 : Multiset Var} {βₗ : Var → LinType}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (z ≔ᶠᵇ c⟦ys…⟧;ᶠᵇ F))
+    (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (z ≔ᶠᵇ c⟦ys…⟧;ᶠᵇ F)) :
+    β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩
+      C_app (ys.map (fun y => (y, β c y)))
+        (z ≔ᶠᵇ c⟦ys…⟧;ᶠᵇ C β F (Function.update βₗ z 𝕆)) βₗ ∷ 𝕆 := by
+  cases wf with
+  | let_const_app_full ys_def arity_eq z_used z_undef F_wf =>
+    refine C_app_main (δ := δ) ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV z_used z_undef F_wf
+      (fun w hw => ys_def hw) ?_ ?_ ?_
+    · intro p hp
+      simp only [List.mem_map] at hp
+      obtain ⟨v, hv, rfl⟩ := hp
+      exact List.mem_toFinset.mpr hv
+    · intro w hw
+      simp only [fv_of_expr, List.mem_toFinset] at hw
+      simpa using hw
+    · rw [filter_map_args, filter_map_args, ← typed_list_split]
+      exact Linear.const_app_full ys c
+
+lemma rc_let_const_app_part_aux {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {F : FnBody} {c : Const} {ys : List Var}
+    {y𝕆 y𝔹 : Multiset Var} {βₗ : Var → LinType}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ y ∈ y𝕆, βₗ y = 𝕆) (y𝔹_𝔹 : ∀ y ∈ y𝔹, βₗ y = 𝔹)
+    (y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (z ≔ᶠᵇ c⟦ys…, _⟧;ᶠᵇ F))
+    (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (z ≔ᶠᵇ c⟦ys…, _⟧;ᶠᵇ F)) :
+    β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩
+      C_app (ys.map (fun y => (y, β c y)))
+        (z ≔ᶠᵇ c⟦ys…, _⟧;ᶠᵇ C β F (Function.update βₗ z 𝕆)) βₗ ∷ 𝕆 := by
+  cases wf with
+  | let_const_app_part ys_def no_𝔹_var z_used z_undef F_wf =>
+    have h𝕆 : ∀ v : Var, β c v = 𝕆 := fun v => not_𝔹_iff_𝕆.mp (no_𝔹_var v)
+    refine C_app_main (δ := δ) ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV z_used z_undef F_wf
+      (fun w hw => ys_def hw) ?_ ?_ ?_
+    · intro p hp
+      simp only [List.mem_map] at hp
+      obtain ⟨v, hv, rfl⟩ := hp
+      exact List.mem_toFinset.mpr hv
+    · intro w hw
+      simp only [fv_of_expr, List.mem_toFinset] at hw
+      simpa using hw
+    · rw [filter_map_args, filter_map_args]
+      rw [List.filter_eq_self.mpr (by simp [h𝕆]), List.filter_eq_nil_iff.mpr (by simp [h𝕆])]
+      simpa using Linear.const_app_part ys c
+
+lemma rc_let_var_app_aux {β : Const → Var → LinType} {δ : Program}
+    {z x y : Var} {F : FnBody} {y𝕆 y𝔹 : Multiset Var} {βₗ : Var → LinType}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ v ∈ y𝕆, βₗ v = 𝕆) (y𝔹_𝔹 : ∀ v ∈ y𝔹, βₗ v = 𝔹)
+    (y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (z ≔ᶠᵇ x⟦y⟧;ᶠᵇ F))
+    (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (z ≔ᶠᵇ x⟦y⟧;ᶠᵇ F)) :
+    β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩
+      C_app [(x, 𝕆), (y, 𝕆)]
+        (z ≔ᶠᵇ x⟦y⟧;ᶠᵇ C β F (Function.update βₗ z 𝕆)) βₗ ∷ 𝕆 := by
+  cases wf with
+  | let_var_app x_def y_def z_used z_undef F_wf =>
+    refine C_app_main (δ := δ) ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV z_used z_undef F_wf ?_ ?_ ?_ ?_
+    · intro w hw
+      simp only [fv_of_expr, Finset.mem_insert, Finset.mem_singleton] at hw
+      rcases hw with rfl | rfl
+      · exact x_def
+      · exact y_def
+    · intro p hp
+      simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
+      rcases hp with rfl | rfl <;> simp [fv_of_expr]
+    · intro w hw
+      simp only [fv_of_expr, Finset.mem_insert, Finset.mem_singleton] at hw
+      rcases hw with rfl | rfl <;> simp
+    · simpa using Linear.var_app x y
+
+lemma rc_let_ctor_aux {β : Const → Var → LinType} {δ : Program}
+    {z : Var} {i : Cnstr} {ys : List Var} {F : FnBody}
+    {y𝕆 y𝔹 : Multiset Var} {βₗ : Var → LinType}
+    (ih : ∀ {y𝕆 y𝔹 : Multiset Var},
+      Multiset.Nodup y𝕆 → Multiset.Nodup y𝔹 → ∀ (βₗ : Var → LinType),
+      (∀ y ∈ y𝕆, βₗ y = 𝕆) → (∀ y ∈ y𝔹, βₗ y = 𝔹) →
+      (y𝕆.toFinset ⊆ fv_of_fn_body F) →
+      (β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ F) →
+      β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩ C β F βₗ ∷ 𝕆)
+    (nd_y𝕆 : Multiset.Nodup y𝕆) (nd_y𝔹 : Multiset.Nodup y𝔹)
+    (y𝕆_𝕆 : ∀ v ∈ y𝕆, βₗ v = 𝕆) (y𝔹_𝔹 : ∀ v ∈ y𝔹, βₗ v = 𝔹)
+    (y𝕆_sub_FV : y𝕆.toFinset ⊆ fv_of_fn_body (z ≔ᶠᵇ ⟪ys⟫i;ᶠᵇ F))
+    (wf : β ;ʷᶠᵇ δ ;ʷᶠᵇ y𝕆.toFinset ∪ y𝔹.toFinset ⊢ʷᶠᵇ (z ≔ᶠᵇ ⟪ys⟫i;ᶠᵇ F)) :
+    β; (y𝕆 {∶} 𝕆) + (y𝔹 {∶} 𝔹) ⊩
+      C_app (ys.map (fun y => (y, 𝕆)))
+        (z ≔ᶠᵇ ⟪ys⟫i;ᶠᵇ C β F (Function.update βₗ z 𝕆)) βₗ ∷ 𝕆 := by
+  cases wf with
+  | let_ctor _ ys_def z_used z_undef F_wf =>
+    refine C_app_main (δ := δ) (args := ys.map (fun y => (y, (fun _ : Var => (𝕆 : LinType)) y)))
+      ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV z_used z_undef F_wf
+      (fun w hw => ys_def hw) ?_ ?_ ?_
+    · intro p hp
+      simp only [List.mem_map] at hp
+      obtain ⟨v, hv, rfl⟩ := hp
+      exact List.mem_toFinset.mpr hv
+    · intro w hw
+      simp only [fv_of_expr, List.mem_toFinset] at hw
+      simpa using hw
+    · rw [filter_map_args, filter_map_args]
+      rw [List.filter_eq_self.mpr (by simp), List.filter_eq_nil_iff.mpr (by simp)]
+      simpa using Linear.ctor_app ys i
+
 
 theorem rc_insertion_correctness' {β : Const → Var → LinType} {δ : Program} {c : Const}
   {y𝕆 y𝔹 : Multiset Var}
@@ -803,13 +1596,6 @@ by
       apply inductive_weakening
       apply Linear.ret
   case let_ y e F ih  =>
-    have ih_C : C_app_rc_insertion_correctness_IH β δ F := by
-      intros y𝕆' y𝔹' βₗ' nd_y𝕆' nd_y𝔹' y𝕆_𝕆' y𝔹_𝔹' wf_F y𝕆_free'
-      have y𝕆_sub_FV_F : y𝕆'.toFinset ⊆ fv_of_fn_body F := by
-        rw [Finset.subset_iff]
-        intros x x_in
-        exact y𝕆_free' (Multiset.mem_toFinset.mp x_in)
-      exact ih nd_y𝕆' nd_y𝔹' βₗ' y𝕆_𝕆' y𝔹_𝔹' y𝕆_sub_FV_F wf_F
     have y𝕆_sub_FV' : ∀ ⦃x : Var⦄, x ∈ y𝕆 → x ∈ fv_of_fn_body (y ≔ᶠᵇ e;ᶠᵇ F) := by
       intros x x_in
       exact y𝕆_sub_FV (Multiset.mem_toFinset.mpr x_in)
@@ -874,12 +1660,13 @@ by
             by_cases z = y
             · cases wf
               grind only [= Finset.mem_union, = Multiset.mem_toFinset]
-            · grind only [= Function.update.eq_1, #3c6c]
+            · cases wf
+              grind
           · cases wf
             rename_i z_undef x_def z_used F_wf
             rw [y𝕆_def] at z_undef F_wf
             intro x_1 a
-            simp_all only [Multiset.mem_toFinset, implies_true, true_and, Finset.mem_union, not_or, true_or,
+            simp_all only [Multiset.mem_toFinset, true_and, Finset.mem_union, not_or, true_or,
               Multiset.toFinset_cons, Finset.mem_insert]
             obtain ⟨left, right⟩ := z_undef
             cases a with
@@ -901,7 +1688,7 @@ by
               Finset.mem_singleton, Finset.mem_erase] at y𝕆_sub_FV
             rename_i v z_undef z_used F_wf
             rw [y𝕆_def] at z_undef F_wf
-            simp_all only [Multiset.mem_toFinset, implies_true, true_and, ne_eq, Multiset.toFinset_cons, Finset.insert_union]
+            simp_all only [Multiset.mem_toFinset, true_and, ne_eq, Multiset.toFinset_cons, Finset.insert_union]
             have left_not_x : y ≠ x := by
               intro h_eq
               subst h_eq
@@ -1052,47 +1839,16 @@ by
           exact F_wf
     | const_app_full c' ys =>
       simp only [C]
-      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
-      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, β c' y)) ys) : Multiset TypedVar) =
-                   (List.map (fun y => y ∶ β c' y) ys : Multiset TypedVar) := by
-        simp only [List.map_map]
-        rfl
-      rw [h_map]
-      apply Linear.const_app_full
+      exact rc_let_const_app_full_aux ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV wf
     | const_app_part c' ys =>
       simp only [C]
-      have : ∀ y ∈ ys, (y, β c' y) = (y, 𝕆) := by
-        cases wf with
-        | let_const_app_part ys_def no_𝔹_var z_used z_undef F_wf =>
-          intros y' y'_in_ys
-          have not_𝔹 := no_𝔹_var y'
-          cases h : β c' y'
-          · rfl
-          · contradiction
-      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
-      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, β c' y)) ys) : Multiset TypedVar) =
-                   (List.map (fun y => y ∶ 𝕆) ys : Multiset TypedVar) := by
-        rw [List.map_congr_left this]
-        simp only [List.map_map]
-        rfl
-      rw [h_map]
-      apply Linear.const_app_part
+      exact rc_let_const_app_part_aux ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV wf
     | var_app x z =>
       simp only [C]
-      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
-      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) [(x, 𝕆), (z, 𝕆)] : Multiset TypedVar) =
-                   {x ∶ 𝕆, z ∶ 𝕆} := by rfl
-      rw [h_map]
-      apply Linear.var_app
+      exact rc_let_var_app_aux ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV wf
     | ctor i ys =>
       simp only [C]
-      apply C_app_rc_insertion_correctness ih_C nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 wf y𝕆_sub_FV'
-      have h_map : (List.map (fun yτ => yτ.1 ∶ yτ.2) (List.map (fun y => (y, 𝕆)) ys) : Multiset TypedVar) =
-                   (List.map (fun y => y ∶ 𝕆) ys : Multiset TypedVar) := by
-        simp only [List.map_map]
-        rfl
-      rw [h_map]
-      apply Linear.ctor_app
+      exact rc_let_ctor_aux ih nd_y𝕆 nd_y𝔹 y𝕆_𝕆 y𝔹_𝔹 y𝕆_sub_FV wf
   case «case» x Fs ih  =>
     unfold C
     have FV_sub_y𝕆_y𝔹 : (fv_of_fn_body (caseᶠᵇ x ofᶠᵇ Fs)).val ⊆ y𝕆 + y𝔹 := by

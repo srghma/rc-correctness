@@ -262,6 +262,3 @@ private def sampleProgram (c : Const) : Fn :=
 
 #guard (sampleProgram 0).ys == [1]
 #guard fv_of_fn_body (sampleProgram 1).fn_body == [1].toFinset
-
-end RcCorrectness
-section end
