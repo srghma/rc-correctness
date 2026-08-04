@@ -1494,7 +1494,7 @@ lemma rc_let_var_app_aux {β : Const → Var → LinType} {δ : Program}
     · intro w hw
       simp only [fv_of_expr, Finset.mem_insert, Finset.mem_singleton] at hw
       rcases hw with rfl | rfl <;> simp
-    · simpa using Linear.var_app x y
+    · exact Linear.var_app x y
 
 lemma rc_let_ctor_aux {β : Const → Var → LinType} {δ : Program}
     {z : Var} {i : Cnstr} {ys : List Var} {F : FnBody}
